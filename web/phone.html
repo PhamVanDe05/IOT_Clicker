@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#162c41">
+  <title>Clicker · Thiết bị điện thoại</title>
+  <link rel="stylesheet" href="phone.css">
+  <script src="phone.js" defer></script>
+</head>
+<body>
+  <main class="clicker">
+    <header><div><p>SMART CLASSROOM</p><h1>Clicker điện thoại</h1></div><span id="connection" role="status">Kết nối…</span></header>
+    <section class="lcd" aria-label="Màn hình clicker" aria-live="polite" aria-atomic="true">
+      <div class="lcd-top"><span>SMART CLICKER</span><span id="session-label">—</span></div>
+      <h2 id="screen-title">ĐANG KẾT NỐI</h2>
+      <p id="screen-value">Vui lòng chờ…</p>
+      <p id="screen-detail"></p>
+      <p id="screen-status"></p>
+    </section>
+    <div class="keypad" aria-label="Bàn phím clicker">
+      <button type="button" data-key="1">1<small>A</small></button>
+      <button type="button" data-key="2">2<small>B</small></button>
+      <button type="button" data-key="3">3<small>C</small></button>
+      <button type="button" data-key="4">4<small>D</small></button>
+      <button type="button" data-key="5">5<small>·</small></button>
+      <button type="button" data-key="6">6<small>·</small></button>
+      <button type="button" data-key="7">7<small>·</small></button>
+      <button type="button" data-key="8">8<small>·</small></button>
+      <button type="button" data-key="9">9<small>·</small></button>
+      <button type="button" data-key="0">0<small>·</small></button>
+    </div>
+    <button id="confirm" type="button">CONFIRM <span>Gửi xác nhận</span></button>
+    <button id="clear" type="button">Xóa MSSV</button>
+    <p class="help">Nhập MSSV bằng phím số. Khi có câu hỏi: 1=A, 2=B, 3=C, 4=D. Chọn xong nhấn CONFIRM.</p>
+    <footer><span>MÃ THIẾT BỊ</span><code id="device-uid">Đang cấp mã…</code><p>Mỗi trình duyệt là một clicker. Giữ trang mở khi làm bài.</p></footer>
+  </main>
+</body>
+</html>

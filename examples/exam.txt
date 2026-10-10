@@ -1,0 +1,27 @@
+[QUESTIONS]
+
+Q1
+Điện áp có đơn vị là gì?
+A. Volt
+B. Ampere
+C. Ohm
+D. Watt
+
+Q2
+Điện trở có đơn vị là gì?
+A. Volt
+B. Ampere
+C. Ohm
+D. Watt
+
+Q3
+Dòng điện có đơn vị là gì?
+A. Watt
+B. Ampere
+C. Volt
+D. Ohm
+
+[ANSWER_KEY]
+Q1=A
+Q2=C
+Q3=B

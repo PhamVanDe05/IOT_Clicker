@@ -35,7 +35,7 @@ const unsigned long DEBOUNCE_MS = 30, SCAN_MS = 5, BLINK_MS = 250;
 // One-digit mode: only the tens (left) digit is used. A one-character screen (question 1, answer A) sits on it;
 // a two-character screen ("12", "Lo", "A=") shows its characters in turn: first for CHAR_MS, dark for GAP_MS, second,
 // dark again; 1 s per cycle. The gap tells "11" from "1". Set false once both digits work: they then show side by side.
-const bool ONE_DIGIT = true;
+const bool ONE_DIGIT = false;
 const unsigned long CHAR_MS = 400, GAP_MS = 100;
 const unsigned long NOTICE_MS = 1500;          // "Hi" / error code on screen
 const unsigned long GATEWAY_TIMEOUT_MS = 5000; // no STATE heard for this long: "nC"
@@ -377,9 +377,12 @@ void latch(uint16_t word) {
     nrf_gpio_pin_clear(SEG_LATCH);
     for (int i = 15; i >= 0; --i) {
         nrf_gpio_pin_write(SEG_DATA, (word >> i) & 1);
+        delayMicroseconds(1);   // data setup before the clock edge
         nrf_gpio_pin_set(SEG_CLOCK);
+        delayMicroseconds(1);   // a bare set/clear pulse is ~40 ns: too short for a 74HC595 on 2 x AAA and long rework wires
         nrf_gpio_pin_clear(SEG_CLOCK);
     }
+    delayMicroseconds(1);
     nrf_gpio_pin_set(SEG_LATCH);
     shown = word;
 }

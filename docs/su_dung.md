@@ -188,7 +188,7 @@ Lưu ý:
 
 **Mã hiển thị trên tag nRF (2 LED 7 đoạn):**
 
-Hiện tag chạy chế độ **1 đèn** (`ONE_DIGIT = true` trong `ClickerTag.ino`): chỉ đèn bên trái sáng. Mã 1 ký tự (câu 1–9, đáp án đã chọn) đứng yên; mã 2 ký tự hiện lần lượt từng ký tự, mỗi vòng 1 s (ví dụ `L` → `o`, `1` → `2`).
+Mã 2 ký tự sáng cả 2 đèn; mã 1 ký tự (câu 1–9, đáp án đã chọn) chỉ sáng đèn bên phải, đèn trái tắt. Đổi `ONE_DIGIT = true` trong `ClickerTag.ino` để dùng 1 đèn (mã 2 ký tự hiện lần lượt).
 
 | LED | Ý nghĩa |
 |---|---|

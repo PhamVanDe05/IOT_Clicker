@@ -2,38 +2,92 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#162c41">
-  <title>Clicker · Thiết bị điện thoại</title>
-  <link rel="stylesheet" href="phone.css">
-  <script src="phone.js" defer></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0F2E3A">
+  <title>Clicker · Vào lớp học</title>
+  <link rel="icon" href="landing/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="landing/apple-touch-icon.png">
+  <link rel="stylesheet" href="phone.css?v=12">
+  <script src="landing/i18n.js?v=8" defer></script>
+  <script src="phone-i18n.js?v=3" defer></script>
+  <script src="phone.js?v=17" defer></script>
 </head>
 <body>
-  <main class="clicker">
-    <header><div><p>SMART CLASSROOM</p><h1>Clicker điện thoại</h1></div><span id="connection" role="status">Kết nối…</span></header>
-    <section class="lcd" aria-label="Màn hình clicker" aria-live="polite" aria-atomic="true">
-      <div class="lcd-top"><span>SMART CLICKER</span><span id="session-label">—</span></div>
-      <h2 id="screen-title">ĐANG KẾT NỐI</h2>
-      <p id="screen-value">Vui lòng chờ…</p>
-      <p id="screen-detail"></p>
-      <p id="screen-status"></p>
+  <!-- Network / loading screen. -->
+  <div id="net-wait" class="net-wait on" role="status" aria-live="polite"><div class="nw-logo" aria-hidden="true"><span class="nw-ring"></span><i>C</i></div><p id="net-wait-text">Đang kết nối…</p></div>
+
+  <header class="bar">
+    <a class="brand" href="landing/"><i>C</i><b>Clicker</b></a>
+    <div class="bar-right"><span id="who" class="who" hidden></span><div class="lang" data-lang-menu></div></div>
+  </header>
+
+  <main>
+    <!-- 1. room code -->
+    <section id="s-code" class="screen card" hidden>
+      <h1>Vào lớp học</h1>
+      <p class="sub">Nhập mã phòng 6 số giảng viên đang chiếu.</p>
+      <form id="code-form" novalidate>
+        <input id="code-input" class="code-input" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000 000" aria-label="Mã phòng">
+        <button class="btn">Vào phòng</button>
+      </form>
     </section>
-    <div class="keypad" aria-label="Bàn phím clicker">
-      <button type="button" data-key="1">1<small>A</small></button>
-      <button type="button" data-key="2">2<small>B</small></button>
-      <button type="button" data-key="3">3<small>C</small></button>
-      <button type="button" data-key="4">4<small>D</small></button>
-      <button type="button" data-key="5">5<small>·</small></button>
-      <button type="button" data-key="6">6<small>·</small></button>
-      <button type="button" data-key="7">7<small>·</small></button>
-      <button type="button" data-key="8">8<small>·</small></button>
-      <button type="button" data-key="9">9<small>·</small></button>
-      <button type="button" data-key="0">0<small>·</small></button>
-    </div>
-    <button id="confirm" type="button">CONFIRM <span>Gửi xác nhận</span></button>
-    <button id="clear" type="button">Xóa MSSV</button>
-    <p class="help">Nhập MSSV bằng phím số. Khi có câu hỏi: 1=A, 2=B, 3=C, 4=D. Chọn xong nhấn CONFIRM.</p>
-    <footer><span>MÃ THIẾT BỊ</span><code id="device-uid">Đang cấp mã…</code><p>Mỗi trình duyệt là một clicker. Giữ trang mở khi làm bài.</p></footer>
+
+    <!-- 2. student info -->
+    <section id="s-info" class="screen card" hidden>
+      <span class="tag" id="info-class"></span>
+      <h1>Thông tin của bạn</h1>
+      <form id="info-form" novalidate>
+        <label>MSSV<input id="info-id" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Ví dụ: 23146101"></label>
+        <label>Họ và tên<input id="info-name" maxlength="120" autocomplete="name" placeholder="Ví dụ: Nguyễn Văn An"></label>
+        <label>Lớp<input id="info-class-input" readonly tabindex="-1"></label>
+        <p class="note">Đã có trong danh sách lớp thì chỉ cần MSSV. Chưa có thì điền thêm họ tên, giảng viên duyệt là vào được.</p>
+        <button class="btn">Vào lớp</button>
+      </form>
+    </section>
+
+    <!-- 3. waiting (green, spinning C) -->
+    <section id="s-wait" class="screen wait" hidden>
+      <div class="nw-logo" aria-hidden="true"><span class="nw-ring"></span><i>C</i></div>
+      <h2 id="wait-title">Đợi giảng viên</h2>
+      <p id="wait-sub"></p>
+    </section>
+
+    <!-- 4. answering -->
+    <section id="s-question" class="screen" hidden>
+      <div class="q-head"><span class="q-no" id="q-no">Câu 1</span><span class="q-left" id="q-left" hidden></span></div><p class="q-quiz" id="q-quiz" hidden></p>
+      <div class="q-timer" id="q-timer" hidden><span></span></div>
+      <h2 class="q-text" id="q-text"></h2>
+      <div class="answers" role="radiogroup" aria-label="Đáp án">
+        <button type="button" data-ans="A" role="radio"><b>A</b><span></span></button>
+        <button type="button" data-ans="B" role="radio"><b>B</b><span></span></button>
+        <button type="button" data-ans="C" role="radio"><b>C</b><span></span></button>
+        <button type="button" data-ans="D" role="radio"><b>D</b><span></span></button>
+      </div>
+      <button id="send" class="btn big" disabled>Gửi đáp án</button>
+    </section>
+
+    <!-- 5. finished -->
+    <section id="s-done" class="screen card center" hidden>
+      <div class="done-ic" aria-hidden="true">✓</div>
+      <h1 id="done-title">Buổi học đã kết thúc</h1>
+      <p class="score" id="done-score" hidden></p>
+      <p class="sub" id="done-sub">Cảm ơn bạn đã tham gia. Giảng viên sẽ thông báo kết quả.</p>
+    </section>
+
+    <!-- BLE mode: the class uses Student Tag V3 boards; this is a working model of one, not connected to the class -->
+    <section id="s-ble" class="screen" hidden>
+      <p class="ble-note" id="ble-note">Lớp đang dùng Student Tag (BLE). Đây là tag mô phỏng: bấm như tag thật, đáp án được gửi lên lớp.</p>
+      <div class="tag-dev" id="tag-dev">
+        <span class="tag-usb" aria-hidden="true"></span>
+        <p class="tag-label">STUDENT TAG</p>
+        <div class="tag-led" aria-label="Màn LED"><svg id="led" viewBox="0 0 120 80"></svg></div>
+        <div class="tag-keys"><button type="button" data-k="1">1<small>A</small></button><button type="button" data-k="2">2<small>B</small></button><button type="button" data-k="3">3<small>C</small></button><button type="button" data-k="4">4<small>D</small></button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button><button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="B" class="fn" aria-label="BACK">←</button><button type="button" data-k="9">9</button><button type="button" data-k="0">0</button><button type="button" data-k="C" class="fn ok">OK</button></div>
+      </div>
+      <p class="tag-status" id="tag-status"></p>
+      <p class="tag-who" id="tag-who" hidden></p>
+    </section>
+
+    <p id="toast" class="toast" role="alert" hidden></p>
   </main>
 </body>
 </html>

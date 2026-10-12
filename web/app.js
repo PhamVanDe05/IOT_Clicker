@@ -2,40 +2,96 @@
 const $ = id => document.getElementById(id);
 const stateNames = {CREATED:'Đã tạo', LOGIN_OPEN:'Đang mở đăng nhập', READY:'Chờ câu hỏi', QUESTION_ACTIVE:'Đang nhận đáp án', FINISHED:'Đã kết thúc'};
 let csrf = '', sessionId = '', current = null, refreshing = false, privacy = true, analysisQuestionId = '', sortWrong = false, pendingDelete = null, students = [];
-let registerMode = false;
 const revealed = new Set(), shownColumns = new Set();
-let mode = 'wifi', bridge = null, onlineUids = [];
-let remote = false;
-const gatewayClient = new GatewayClient((action, data) => api(action, data), message => {
-  $('gateway-state').textContent = gatewayClient.uid ? 'Đã kết nối' : 'Chưa kết nối';
-  $('gateway-detail').textContent = message;
-  $('connect-gateway').textContent = gatewayClient.uid ? 'Kết nối lại Gateway' : 'Kết nối Gateway';
-  renderConnection();
-});
+// Live tab: results shown on the projected question; switched off whenever another question is shown.
+let resultsOn = false, resultsFor = '';
+// Wi-Fi / BLE belongs to the teacher's room; with no running room the page keeps the last choice and sends it with
+// create_session, so the next room starts in it.
+let mode = (() => { try { return localStorage.getItem('clicker-mode') === 'ble' ? 'ble' : 'wifi'; } catch { return 'wifi'; } })(), onlineUids = [];
+const keepMode = m => { try { localStorage.setItem('clicker-mode', m); } catch {} };
 // busy: a command is in flight, so every control stays locked. actionSeq drops dashboard replies requested before it.
 let busy = 0, actionSeq = 0, refreshQueue = Promise.resolve();
 const MODES = {
-  wifi: {label:'WI-FI', footer:'Chế độ Wi-Fi', detail:'Thiết bị đang kết nối', core:'Wi-Fi', kind:'ESP32 & điện thoại',
-    joinTitle:'Mở đăng nhập, sau đó nhập MSSV trên clicker.', joinText:'Điện thoại mở liên kết bên dưới; ESP32 tự hiển thị màn hình nhập khi phòng mở đăng nhập.'},
+  wifi: {label:'WI-FI', footer:'Chế độ Wi-Fi', detail:'Thiết bị đang kết nối', core:'Wi-Fi', kind:'Điện thoại / laptop',
+    joinTitle:'Link cho sinh viên', joinText:''},
   ble: {label:'BLE', footer:'Chế độ BLE', detail:'Thiết bị đang kết nối', core:'BLE', kind:'Student Tag nRF52840',
-    joinTitle:'Mở đăng nhập, sinh viên nhập MSSV trên Student Tag.', joinText:'Tag hiện Lo khi phòng mở đăng nhập. Nhập MSSV bằng phím số, bấm OK; tag hiện Hi và rung khi thành công.'}
+    joinTitle:'Sinh viên nhập MSSV trên Student Tag', joinText:''}
 };
 $('phone-url').textContent = new URL('phone.html', location.href).href;
 
+// ---- Gateway USB (gateway.js): the Student Tags reach the server through an nRF52840 on this computer's USB.
+// Its own request helper keeps the HTTP status and error code, which the gateway turns into the tag's E1–E8.
+async function gatewayRequest(action, data) {
+  const response = await fetch('api.php', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify({action, ...data})});
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) throw Object.assign(new Error(result.error || 'Máy chủ không phản hồi.'), {status:response.status, code:result.code});
+  return result;
+}
+let gwInfo = {phase:'off', uid:'', message:'Chưa kết nối.', tags:0, relayed:0}, wakeLock = null;
+const gateway = new GatewayClient(gatewayRequest, info => {
+  gwInfo = info; renderGateway(); renderConnection(); keepAwake();
+  if (info.phase === 'on') addEventListener('beforeunload', leaveGuard); else removeEventListener('beforeunload', leaveGuard);
+});
+function renderGateway() {
+  const phase = gwInfo.phase, viewing = document.body.classList.contains('viewing');
+  $('gw-card').dataset.phase = phase;
+  $('gw-badge').textContent = {off:'Chưa kết nối', connecting:'Đang kết nối…', on:'Đã kết nối', error:'Cần xử lý'}[phase];
+  $('gw-uid').textContent = gwInfo.uid ? gwInfo.uid.slice(7).match(/../g).join(':') : '—';
+  $('gw-tags').textContent = gwInfo.tags; $('gw-relayed').textContent = gwInfo.relayed;
+  $('gw-detail').textContent = viewing ? 'Đang xem dữ liệu giáo viên khác (chỉ đọc): không dùng được Gateway.' : gwInfo.message;
+  $('gw-connect').hidden = phase === 'on'; $('gw-disconnect').hidden = phase !== 'on';
+  $('gw-connect').disabled = phase === 'connecting' || !GatewayClient.supported() || viewing;
+  const why = !('serial' in navigator) ? 'browser' : !isSecureContext ? 'http' : '';
+  $('gw-unsupported').hidden = !why;
+  if (why === 'http') $('gw-unsupported').textContent = 'Gateway USB chỉ chạy trên trang https:// (link công khai của Clicker) hoặc http://localhost ngay trên máy chủ.';
+}
+// The laptop must not sleep in the middle of a BLE class (the screen lock only holds while this tab is visible).
+function keepAwake() {
+  const want = gwInfo.phase === 'on' && document.visibilityState === 'visible';
+  if (want && !wakeLock) navigator.wakeLock?.request('screen').then(lock => { wakeLock = lock; lock.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
+  else if (!want && wakeLock && gwInfo.phase !== 'on') wakeLock.release().catch(() => {});
+}
+document.addEventListener('visibilitychange', keepAwake);
+function gatewayAuto() { if (mode === 'ble' && !$('workspace').hidden && !document.body.classList.contains('viewing')) gateway.autoConnect().catch(() => {}); }
+navigator.serial?.addEventListener('connect', gatewayAuto);   // plugged back in: reconnect without a prompt
+// Closing the tab mid-class stops every tag: ask first, but only while a gateway is connected (a page with an
+// unload guard is never kept in the back/forward cache, so it is not left on all the time).
+function leaveGuard(event) { if (mode === 'ble') event.preventDefault(); }
+
+// One menu item can hold several steps: "Chuẩn bị" = #classes → #prepare → #room, with the step bar on top.
+// #setup opens the step used last (or the first one still empty).
+// A page kept from before a deploy (Apache sends no cache headers): reload it once, with a fresh URL, when the server runs another version.
+const WEB_VERSION = '20261013-2';
+function freshPage(serverVersion) {
+  if (!serverVersion || serverVersion === WEB_VERSION) return false;
+  try { if (sessionStorage.getItem('clicker-reloaded') === serverVersion) return false; sessionStorage.setItem('clicker-reloaded', serverVersion); } catch { return false; }
+  const url = new URL(location.href); url.searchParams.set('r', serverVersion); location.replace(url); return true;
+}
 function showView() {
-  const requested = location.hash.slice(1);
-  const view = document.querySelector(`.side-nav a[href="#${CSS.escape(requested)}"]:not([hidden])`) ? requested : 'overview';
-  for (const element of document.querySelectorAll('#workspace [data-view]')) element.hidden = element.dataset.view !== view;
+  let requested = location.hash.slice(1);
+  if (requested === 'setup') {
+    let last = ''; try { last = sessionStorage.getItem('clicker-step') || ''; } catch {}
+    requested = last || (!$('manage-classes').querySelector('.manage-item') ? 'classes' : !$('manage-exams').querySelector('.manage-item') ? 'prepare' : 'room');
+    history.replaceState(null, '', '#' + requested);
+  }
+  const owner = document.querySelector(`.side-nav a[href="#${CSS.escape(requested)}"]:not([hidden])`)
+    || [...document.querySelectorAll('.side-nav a[data-steps]:not([hidden])')].find(a => a.dataset.steps.split(' ').includes(requested));
+  const view = owner ? requested : 'overview';
+  for (const element of document.querySelectorAll('#workspace [data-view]')) element.hidden = !element.dataset.view.split(' ').includes(view);
   for (const link of document.querySelectorAll('.side-nav a')) {
-    const active = link.hash === '#' + view;
+    const active = link === owner || (!owner && link.hash === '#overview');
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
-  document.querySelector('.topbar h1').textContent = document.querySelector(`.side-nav a[href="#${CSS.escape(view)}"]`).lastChild.textContent.trim();
+  for (const step of document.querySelectorAll('.stepper .step')) step.classList.toggle('on', step.hash === '#' + view);
+  if (owner?.dataset.steps) try { sessionStorage.setItem('clicker-step', view); } catch {}
+  document.querySelector('.topbar h1').textContent = (owner || document.querySelector('.side-nav a[href="#overview"]')).querySelector('span').textContent.trim();
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', showView);
 showView();
+// #config was the ESP32 Wi-Fi page (ESP32 boards are no longer used): it opens the Thiết bị tab.
+if (location.hash === '#config') location.replace('#connection');
 
 if (matchMedia('(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)').matches) {
   document.addEventListener('pointermove', event => {
@@ -44,36 +100,26 @@ if (matchMedia('(hover: hover) and (pointer: fine) and (prefers-reduced-motion: 
   }, {passive:true});
 }
 
-function deviceKind(uid) { return !uid ? '' : uid.startsWith('NRF-') ? 'nRF' : uid.startsWith('PHONE-') ? 'Điện thoại' : 'ESP32'; }
-function showSignedIn(on) { $('workspace').hidden = !on; $('login-panel').hidden = on; $('logout').hidden = !on; $('mode-switch').hidden = !on; }
-function updateConfig() {
-  const ble = mode === 'ble', visible = ble || !remote;
-  $('config').hidden = !visible;
-  const nav = document.querySelector('.side-nav a[href="#config"]');
-  nav.hidden = !visible;
-  nav.lastChild.textContent = ble ? ' Cấu hình Gateway' : ' Cấu hình Wi-Fi';
-  $('config-title').textContent = ble ? 'Cấu hình Gateway' : 'Cấu hình Wi-Fi ESP32';
-  $('config-description').textContent = ble ? 'Cắm Gateway nRF52840 vào USB của laptop giáo viên.' : 'Một lần gửi cho mọi ESP32 đang chờ cấu hình.';
-  $('wifi-config-card').hidden = ble;
-  $('gateway-config-card').hidden = !ble;
-  if (!visible && location.hash === '#config') location.hash = '#overview';
-  if (ble && !$('workspace').hidden) gatewayClient.autoConnect().catch(error => $('gateway-detail').textContent = error.message);
+function deviceKind(uid) { return !uid ? '' : uid.startsWith('NRF-SIM-') ? 'Tag mô phỏng' : uid.startsWith('NRF-') ? 'nRF' : uid.startsWith('PHONE-') ? 'Điện thoại' : 'ESP32'; }
+function showSignedIn(on) {
+  // Signed out or session expired: the only login page is the public one.
+  if (!on) { location.replace('landing/login.html'); return; }
+  $('workspace').hidden = false; $('logout').hidden = false; $('mode-switch').hidden = false;
 }
 function applyMode(next, animate) {
-  const changed = next !== mode; mode = next; const text = MODES[mode];
+  const changed = next !== mode; mode = next; keepMode(mode); const text = MODES[mode];
   document.body.dataset.mode = mode;
   for (const button of document.querySelectorAll('#mode-switch button')) button.setAttribute('aria-checked', String(button.dataset.mode === mode));
   $('footer-mode').textContent = text.footer; $('footer-detail').textContent = text.detail; $('device-kind').textContent = text.kind;
   $('conn-mode-label').textContent = text.label; $('radio-core').textContent = text.core;
-  $('bridge-label').textContent = mode === 'ble' ? 'Gateway USB' : 'BLE bridge';
-  $('join-title').textContent = text.joinTitle; $('join-text').textContent = text.joinText;
+  $('join-title').textContent = text.joinTitle; $('join-text').textContent = text.joinText; $('join-text').hidden = !text.joinText;
   if (animate && changed && !matchMedia('(prefers-reduced-motion: reduce)').matches) { document.body.classList.remove('mode-flash'); void document.body.offsetWidth; document.body.classList.add('mode-flash'); setTimeout(() => document.body.classList.remove('mode-flash'), 900); }
-  updateConfig();
-  renderConnection();
+  renderConnection(); renderGateway();
+  if (mode === 'ble') gatewayAuto();
 }
 function renderConnection() {
-  const up = mode === 'ble' ? !!gatewayClient.uid : !!bridge && Number(bridge.online) === 1;
-  $('bridge-state').textContent = up ? 'Đang chạy' : mode === 'ble' ? 'Chưa kết nối' : bridge ? 'Không phản hồi' : 'Chưa chạy';
+  const up = gwInfo.phase === 'on';
+  $('bridge-state').textContent = up ? 'Đang chạy' : 'Chưa kết nối';
   $('bridge-state').className = up ? 'good' : mode === 'ble' ? 'bad' : '';
   $('tag-count').textContent = onlineUids.filter(uid => uid.startsWith('NRF-')).length;
   $('wifi-count').textContent = onlineUids.filter(uid => !uid.startsWith('NRF-')).length;
@@ -82,33 +128,24 @@ function renderConnection() {
 async function pollStatus() {
   if ($('workspace').hidden) return;
   const data = await api('status', null, 'GET');
-  bridge = data.bridge; onlineUids = data.online;
-  if (data.mode !== mode) applyMode(data.mode, true); else renderConnection();
+  onlineUids = data.online;
+  if (data.mode && data.mode !== mode) applyMode(data.mode, true); else renderConnection();
 }
-function notify(message, error = false) { $('notice').textContent = message; $('notice').className = error ? 'notice error' : 'notice'; }
+// Toast under the top bar: shows the message for a few seconds (errors longer), then fades out.
+let noticeTimer = 0;
+function notify(message, error = false) {
+  const el = $('notice'); el.textContent = message; el.className = 'notice show' + (error ? ' error' : '');
+  clearTimeout(noticeTimer); noticeTimer = setTimeout(() => el.classList.remove('show'), error ? 8000 : 3500);
+}
 async function api(action, data, method = 'POST') {
   const response = await fetch(method === 'GET' ? `api.php?action=${action}${data ? '&' + new URLSearchParams(data) : ''}` : 'api.php',
     method === 'GET' ? {} : {method, headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action,...data})});
   const result = await response.json();
   if (!response.ok || !result.ok) {
     if (response.status === 401) showSignedIn(false);
-    const error = new Error(result.error || 'Không thể kết nối server.');
-    error.status = response.status; error.code = result.code;
-    throw error;
+    throw new Error(result.error || 'Không thể kết nối server.');
   }
   return result;
-}
-async function loadWifiInfo() {
-  const info = await api('wifi_info', null, 'GET');
-  // Server-side values track the laptop's real Wi-Fi, whatever address this page was opened with.
-  if (!$('wifi-ssid').value) $('wifi-ssid').value = info.ssid || '';
-  if (!$('wifi-bssid').value) $('wifi-bssid').value = info.bssid || '';
-  $('wifi-server-ip').value = info.server_ip || '';
-  const missing = !info.ssid || !info.bssid || !info.server_ip;
-  $('wifi-detected').textContent = missing
-    ? 'Chưa đọc đủ thông tin Wi-Fi của laptop. Mở mục Nâng cao để điền phần còn thiếu.'
-    : `Laptop đang ở mạng “${info.ssid}”, IP ${info.server_ip}. Chỉ cần nhập mật khẩu.`;
-  if (missing) $('wifi-bssid').closest('details').open = true;
 }
 function updateClearButtons() {
   for (const button of document.querySelectorAll('[data-clear]')) button.disabled = !$(button.dataset.clear).value || $(button.dataset.clear).disabled;
@@ -131,26 +168,87 @@ function confirmRemoval(type, item, name) {
   $('confirm-delete').textContent = 'XÁC NHẬN XÓA';
   $('delete-dialog').showModal();
 }
+// Lists of classes, sets and rooms: the one picked for the room form is highlighted ("✓ Đang chọn"), and long lists
+// get a search box so the right one is easy to find.
+function markPicked(selectId) {
+  const value = $(selectId).value;
+  for (const row of document.querySelectorAll(`.manage-item[data-select="${selectId}"]`)) {
+    const on = row.dataset.value === value, button = row.querySelector('.pick');
+    row.classList.toggle('picked', on);
+    if (button) { button.textContent = on ? '✓ Đang chọn' : 'Chọn'; button.className = 'pick ' + (on ? 'primary' : 'secondary'); button.setAttribute('aria-pressed', String(on)); }
+  }
+}
+function listSearch(area, count) {
+  let box = area.previousElementSibling?.classList.contains('list-search') ? area.previousElementSibling : null;
+  if (count <= 5) { box?.remove(); return; }
+  if (!box) {
+    box = document.createElement('input'); box.type = 'search'; box.className = 'list-search'; box.placeholder = 'Tìm…'; box.setAttribute('aria-label', 'Tìm trong danh sách');
+    box.addEventListener('input', () => filterList(area, box.value));
+    area.before(box);
+  }
+  filterList(area, box.value);
+}
+function filterList(area, query) {
+  const q = query.trim().toLowerCase();
+  for (const row of area.querySelectorAll('.manage-item')) row.hidden = !!q && !row.dataset.search.includes(q);
+}
 function manageList(id, rows, type, name, selectId) {
   const area = $(id); area.replaceChildren();
+  if (type !== 'student') listSearch(area, rows.length);
   if (!rows.length) { area.textContent = 'Chưa có dữ liệu.'; return; }
   for (const item of rows) {
     const row = document.createElement('div'); row.className = 'manage-item';
+    if (type !== 'student') { row.dataset.select = selectId; row.dataset.value = String(item[type === 'class' ? 'class_id' : 'id']); row.dataset.search = String(name(item)).toLowerCase(); }
     const info = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = name(item);
     const detail = document.createElement('small'); detail.textContent = type === 'student' ? `MSSV ${item.student_id}` : type === 'class' ? `${item.count} sinh viên` : type === 'exam' ? `${item.count} câu hỏi` : stateNames[item.state];
     info.append(title, detail); row.append(info);
     const controls = document.createElement('div'); controls.className = 'actions';
     if (type !== 'student') {
-      const choose = document.createElement('button'); choose.className = 'secondary'; choose.textContent = 'Chọn';
-      choose.addEventListener('click', () => { $(selectId).value = String(item[type === 'class' ? 'class_id' : 'id']); $(selectId).dispatchEvent(new Event('change')); $(selectId).focus(); });
+      const choose = document.createElement('button'); choose.className = 'pick secondary'; choose.textContent = 'Chọn';
+      choose.addEventListener('click', () => {
+        $(selectId).value = row.dataset.value; $(selectId).dispatchEvent(new Event('change')); markPicked(selectId);
+        if (type !== 'session') notify(`Đã chọn ${type === 'class' ? 'lớp' : 'bộ đề'} "${name(item)}" cho phòng mới.`);
+      });
       controls.append(choose);
+    }
+    if (type === 'class') {
+      // Current list of this class, including students approved from the phone page.
+      const csv = document.createElement('button'); csv.className = 'secondary'; csv.textContent = 'Tải CSV';
+      csv.addEventListener('click', () => {
+        const cell = value => { const text = String(value); return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
+        const rows = students.filter(row => row.class_id === item.class_id).map(row => [row.student_no, row.student_id, row.student_name, row.class_id]);
+        const text = '\ufeff' + [['STT', 'MSSV', 'Họ tên', 'Lớp'], ...rows].map(row => row.map(cell).join(',')).join('\n') + '\n';
+        const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([text], {type:'text/csv;charset=utf-8'}));
+        link.download = `${item.class_id}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      });
+      controls.append(csv);
+    }
+    if (type === 'exam') {
+      const edit = document.createElement('button'); edit.className = 'secondary'; edit.textContent = 'Sửa câu';
+      edit.addEventListener('click', () => ExamEditor.open(item.id));
+      controls.append(edit);
     }
     const remove = document.createElement('button'); remove.className = 'danger'; remove.textContent = 'Xóa';
     remove.addEventListener('click', () => confirmRemoval(type, item, name(item)));
     controls.append(remove); row.append(controls);
     area.append(row);
   }
+}
+// Tổng quan: the latest rooms, one click opens them in Phòng.
+function renderRecent(sessions) {
+  const list = sessions.slice(0, 5);
+  $('recent-sessions').replaceChildren(...(list.length ? list.map(row => {
+    const a = document.createElement('button'); a.type = 'button'; a.className = 'recent-row';
+    const left = document.createElement('div');
+    const title = document.createElement('b'); title.textContent = row.title || `Kiểm tra lớp ${row.class_id}`;
+    const meta = document.createElement('small'); meta.textContent = `${/^lớp\s/i.test(row.class_id) ? row.class_id : 'Lớp ' + row.class_id} · ${row.exam_title || ''} · ${new Date(String(row.created_at).replace(' ', 'T')).toLocaleDateString('vi-VN')}`;
+    left.append(title, meta);
+    const badge = document.createElement('span'); badge.className = 'state-badge ' + (row.state === 'FINISHED' ? 'done' : 'active'); badge.textContent = stateNames[row.state];
+    a.append(left, badge);
+    a.addEventListener('click', () => { $('session-select').value = row.id; $('session-select').dispatchEvent(new Event('change')); location.hash = row.state === 'FINISHED' ? '#results-section' : '#room'; });
+    return a;
+  }) : [Object.assign(document.createElement('p'), {className:'hint', textContent:'Chưa có buổi kiểm tra nào. Tạo buổi đầu tiên ở tab Phòng.'})]));
 }
 function renderStudents() {
   const selected = $('class-select').value;
@@ -160,26 +258,45 @@ function renderStudents() {
 }
 async function bootstrap() {
   const data = await api('bootstrap', null, 'GET');
-  remote = !!data.remote;
+  // Through the internet link the Wi-Fi setup tab cannot reach a board (boards use BACK 5 s instead).
   $('phone-link').href = data.phone_url; $('phone-url').textContent = data.phone_url;
-  bridge = data.bridge; onlineUids = data.devices.filter(row => Number(row.online) && !row.device_uid.startsWith('BRIDGE-')).map(row => row.device_uid);
-  applyMode(data.mode, false);
+  onlineUids = data.devices.filter(row => Number(row.online) && !row.device_uid.startsWith('BRIDGE-')).map(row => row.device_uid);
+  applyMode(data.mode || mode, false);
   const classes = data.classes, exams = data.exams, sessions = data.sessions;
   students = data.students;
-  selectOptions('class-select', classes, 'class_id', row => `${row.class_id} · ${row.count} sinh viên`, 'Chọn lớp');
-  selectOptions('exam-select', exams, 'id', row => `${row.title} · ${row.count} câu`, 'Chọn bộ đề');
+  // An empty list looks broken when clicked; say where the data comes from instead.
+  selectOptions('class-select', classes, 'class_id', row => Number(row.open) ? `${row.class_id} · tự đăng ký · ${row.count} sinh viên` : `${row.class_id} · ${row.count} sinh viên`, classes.length ? 'Chọn lớp' : 'Chưa có lớp');
+  selectOptions('exam-select', exams, 'id', row => `${row.title} · ${row.count} câu`, exams.length ? 'Chọn bộ đề' : 'Chưa có bộ đề');
+  $('room-empty').hidden = !!(classes.length && exams.length);
+  // "Sinh viên tự làm" needs the pacing column on the server (tools/setup_db.sh)
+  $('pacing-select').querySelector('[value=self]').disabled = data.pacing_ready === false;
+  if (data.pacing_ready === false) $('pacing-select').value = 'teacher';
   selectOptions('session-select', sessions, 'id', row => `#${row.id} · ${row.title || 'Kiểm tra lớp '+row.class_id} · ${stateNames[row.state]}`, 'Chọn session');
-  manageList('manage-classes', data.classes, 'class', row => `Lớp ${row.class_id} · ${row.count} sinh viên`, 'class-select');
-  manageList('manage-exams', data.exams, 'exam', row => `${row.title} · ${row.count} câu`, 'exam-select');
+  manageList('manage-classes', data.classes, 'class', row => Number(row.open) ? `${row.class_id} · tự đăng ký` : row.class_id, 'class-select');
+  renderRecent(sessions);
+  manageList('manage-exams', data.exams, 'exam', row => row.title, 'exam-select');
+  ExamEditor.sync(exams);
   manageList('manage-sessions', data.sessions, 'session', row => `#${row.id} · ${row.title || row.exam_title}`, 'session-select');
+  for (const id of ['class-select', 'exam-select', 'session-select']) markPicked(id);
   renderStudents();
   $('total-classes').textContent = classes.length; $('total-exams').textContent = exams.length;
   $('roster-ready').textContent = classes.length ? `${classes.length} lớp sẵn sàng` : 'Chưa có dữ liệu'; $('roster-ready').classList.toggle('ready', !!classes.length);
   $('exam-ready').textContent = exams.length ? `${exams.length} bộ đề sẵn sàng` : 'Chưa có dữ liệu'; $('exam-ready').classList.toggle('ready', !!exams.length);
+  // step bar: how far the teacher got
+  const steps = [['classes', classes.length, 'lớp'], ['sets', exams.length, 'bộ đề'], ['room', sessions.length, 'phòng']];
+  for (const [id, n, unit] of steps) { $('step-' + id).textContent = n ? `${n} ${unit}` : 'Chưa có'; $('step-' + id).closest('.step').classList.toggle('done', !!n); }
   $('device-status').textContent = `Thiết bị online: ${onlineUids.length}`;
   $('total-devices').textContent = onlineUids.length;
   sessionId = $('session-select').value;
   if (sessionId) await refresh(true); else renderEmpty();
+}
+// Projector: shrink the question and answers until nothing overflows (short questions stay huge, long ones fit).
+function fitProjector() {
+  const area = $('question-display');
+  area.style.removeProperty('--fit');
+  if (!document.body.classList.contains('projecting')) return;
+  const over = () => area.scrollHeight > area.clientHeight + 2 || [...area.querySelectorAll('.option')].some(o => o.scrollHeight > o.clientHeight + 2);
+  for (let fit = 1; fit > 0.45 && over(); fit -= 0.07) area.style.setProperty('--fit', fit.toFixed(2));
 }
 function drawQuestion(area, question, showAnswer) {
   area.replaceChildren();
@@ -196,6 +313,84 @@ function drawQuestion(area, question, showAnswer) {
   if (showAnswer && question.correct_answer) {
     const answer = document.createElement('p'); answer.className = 'correct-note'; answer.textContent = `Đáp án đúng: ${question.correct_answer}`; area.append(answer);
   }
+}
+// Bars behind each choice (share of answers), the key marked, and a summary line: the class result for the projector.
+function drawResults(area, question, stats, rosterSize) {
+  const answered = stats?.answered || 0, dist = stats?.distribution || {};
+  for (const option of area.querySelectorAll('.option')) {
+    const letter = option.querySelector('.option-letter').textContent, count = Number(dist[letter] || 0);
+    const pct = answered ? Math.round(count / answered * 100) : 0;
+    option.classList.add('with-result'); option.classList.toggle('correct', question.correct_answer === letter);
+    option.style.setProperty('--pct', pct + '%');
+    const result = document.createElement('span'); result.className = 'opt-result'; result.textContent = `${count} · ${pct}%`;
+    option.append(result);
+  }
+  const accuracy = answered ? Math.round((stats?.correct || 0) / answered * 100) : 0;
+  const summary = document.createElement('p'); summary.className = 'result-summary';
+  summary.textContent = `${accuracy}% đúng · ${answered}/${rosterSize} đã trả lời`;
+  area.querySelector('h3').after(summary);
+}
+// "Sinh viên tự làm" rooms: no single open question, so the Live card shows each student's progress instead,
+// and the side panel shows the class totals and the share of right answers per question.
+const selfClock = {end:0, total:0};
+function tickSelfClock() {
+  const el = $('self-clock'); el.hidden = !selfClock.end;
+  if (!selfClock.end) return;
+  const left = Math.max(0, Math.round((selfClock.end - Date.now()) / 1000));
+  el.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  el.classList.toggle('warn', left <= 30);
+}
+setInterval(tickSelfClock, 250);
+function drawSelf(data, lock, active, finished) {
+  for (const id of ['next-question', 'previous-question', 'auto-mode', 'show-results', 'edit-question']) $(id).disabled = true;
+  $('start-question').disabled = lock || finished || active;
+  const progress = data.self_progress || {}, joined = data.roster.filter(s => s.device_uid);
+  const done = joined.filter(s => progress[s.student_id]?.done).length, total = data.report.questions.length;
+  const answered = data.report.rows.reduce((n, r) => n + Object.values(r.answers).filter(Boolean).length, 0);
+  const correct = data.report.rows.reduce((n, r) => n + r.correct, 0);
+  $('projector-count').textContent = `Đã xong: ${done} / ${joined.length}`;
+  $('projector-waiting').textContent = `Đang làm: ${joined.length - done}`;
+  $('question-status').textContent = finished ? 'Đã kết thúc' : active ? 'Đang làm bài' : 'Chưa bắt đầu';
+  // Whole-quiz countdown (questions x seconds from Bắt đầu); the room ends by itself at 0:00.
+  selfClock.end = active && data.self_left != null ? Date.now() + data.self_left * 1000 : 0;
+  selfClock.total = data.self_total || 0; tickSelfClock();
+  const area = $('question-display'); area.replaceChildren();
+  const title = document.createElement('h3');
+  title.textContent = finished ? 'Bài làm đã kết thúc' : active ? 'Sinh viên đang tự làm bài' : `Sinh viên tự làm · ${data.session.auto_seconds} giây/câu`;
+  area.append(title);
+  if (!active && !finished) {
+    const p = document.createElement('p'); p.className = 'self-hint';
+    p.textContent = `Bấm Bắt đầu: mỗi sinh viên thấy câu hỏi trên máy mình, trả lời xong là sang câu kế; quá ${data.session.auto_seconds} giây không chọn thì tự sang câu mới.`;
+    area.append(p); return;
+  }
+  const bar = document.createElement('div'); bar.className = 'self-total';
+  bar.innerHTML = '<span></span>'; bar.firstChild.style.width = (joined.length ? done / joined.length * 100 : 0) + '%';
+  const list = document.createElement('div'); list.className = 'self-list';
+  const projecting = document.body.classList.contains('projecting');
+  for (const s of joined) {
+    const pr = progress[s.student_id] || {index:1, answered:0, total, done:false};
+    const item = document.createElement('div'); item.className = 'self-item' + (pr.done ? ' done' : '');
+    const name = document.createElement('b'); name.textContent = projecting || privacy ? `#${s.student_no}` : `${s.student_no}. ${s.student_name}`;
+    const track = document.createElement('i'); const fill = document.createElement('span'); fill.style.width = (pr.total ? (pr.done ? 1 : (pr.index - 1) / pr.total) * 100 : 0) + '%'; track.append(fill);
+    const label = document.createElement('small'); label.textContent = pr.done ? 'Xong ✓' : `Câu ${pr.index}/${pr.total}`;
+    item.append(name, track, label); list.append(item);
+  }
+  area.append(bar, list);
+  // side panel: class totals and right answers per question
+  $('stats').replaceChildren(statBox('Đăng nhập', `${data.logged_in}/${data.roster.length}`), statBox('Đã xong', `${done}/${joined.length}`),
+    statBox('Đã trả lời', answered), statBox('Đúng', correct), statBox('Tỷ lệ đúng', `${answered ? Math.round(correct / answered * 100) : 0}%`));
+  const pct = joined.length && total ? Math.round(answered / (joined.length * total) * 100) : 0;
+  $('response-progress').style.width = pct + '%'; $('response-caption').textContent = `${pct}% số câu của cả lớp đã trả lời`;
+  $('dist-title').textContent = 'Tỷ lệ đúng từng câu';
+  const keys = new Map(data.report.questions.map(q => [`Q${q.question_no}`, q.correct_answer]));
+  $('distribution').replaceChildren(...[...keys.keys()].map(q => {
+    const given = data.report.rows.map(r => r.answers[q]).filter(Boolean), right = given.filter(a => a === keys.get(q)).length;
+    const row = document.createElement('div'); row.className = 'answer-bar';
+    const n = document.createElement('span'); n.textContent = q;
+    const tr = document.createElement('div'); const f = document.createElement('i'); f.style.width = (given.length ? right / given.length * 100 : 0) + '%'; tr.append(f);
+    const v = document.createElement('strong'); v.textContent = given.length ? `${Math.round(right / given.length * 100)}%` : '—';
+    row.append(n, tr, v); return row;
+  }));
 }
 function statBox(name, value) {
   const box = document.createElement('div'); box.className = 'stat';
@@ -221,6 +416,7 @@ function renderEmpty() {
   current = null; analysisQuestionId = ''; revealed.clear();
   $('room-title').textContent = 'Chưa chọn phòng'; $('room-badge').textContent = 'Chờ thiết lập'; $('room-badge').className = 'state-badge';
   $('session-status').textContent = 'Chưa chọn buổi kiểm tra.'; $('question-status').textContent = 'Chưa mở câu';
+  showRoomCode(null); renderJoins([]); $('show-results').disabled = true; $('edit-question').disabled = true; resultsOn = false;
   $('question-select').replaceChildren(new Option('Chọn câu hỏi', '')); delete $('question-select').dataset.signature; drawQuestion($('question-display'), null, false);
   $('stats').replaceChildren(); $('distribution').replaceChildren(); $('roster-preview').textContent = 'Chưa chọn phòng.';
   $('participants').textContent = 'Chưa chọn phòng.'; $('participant-count').textContent = '0/0'; $('auto-countdown').hidden = true;
@@ -303,23 +499,72 @@ function renderResults(data) {
   };
   const head = document.createElement('tr');
   head.append(header('STT'), header('MSSV', 'id'), header('Họ tên', 'name'), header('Trạng thái'), ...columns.map(column => header(column.label, column.no)));
-  for (const label of ['Đúng/Tổng','Tỷ lệ đúng']) head.append(header(label));
+  for (const label of ['Đúng/Tổng','Tỷ lệ đúng','Điểm /10']) head.append(header(label));
   $('results').tHead.replaceChildren(head); $('results').tBodies[0].replaceChildren();
   const reportRows = new Map(data.report.rows.map(row => [row.student_id, row]));
+  const keys = new Map(data.report.questions.map(q => [String(q.question_no), q.correct_answer]));
   for (const student of data.roster) {
     const row = reportRows.get(student.student_id);
     const values = [student.student_no, hidden('id', student.student_id), hidden('name', student.student_name),
       student.device_uid ? Number(student.online) ? 'Đã kết nối' : 'Mất kết nối' : 'Chưa tham gia',
       ...columns.map(column => answerCell(column.no, column.live ? data.live_responses[student.student_id] : row?.answers['Q' + column.no])),
-      row ? `${row.correct}/${row.total}` : `0/${data.report.questions.length}`, `${row?.percent ?? 0}%`];
-    const tr = tableRow(values); if (!student.device_uid) tr.className = 'absent'; $('results').tBodies[0].append(tr);
+      row ? `${row.correct}/${row.total}` : `0/${data.report.questions.length}`, `${row?.percent ?? 0}%`, String(row?.score10 ?? 0)];
+    const tr = tableRow(values); if (!student.device_uid) tr.className = 'absent';
+    // Closed questions: green when the answer matches the key, red when it does not (only where the answer is shown).
+    columns.forEach((column, i) => {
+      const key = keys.get(String(column.no)), answer = row?.answers['Q' + column.no];
+      if (column.live || !key || !answer || !shown(column.no)) return;
+      tr.cells[4 + i].className = answer === key ? 'ans-ok' : 'ans-bad';
+    });
+    $('results').tBodies[0].append(tr);
   }
+}
+// Six-digit code students type on the public page; the server sends it only while this room holds the devices.
+function showRoomCode(code) {
+  const text = code ? code.replace(/^(\d{3})(\d{3})$/, '$1 $2') : '';
+  $('room-code-box').hidden = !code; $('projector-code').hidden = !code;
+  if ($('room-code').textContent !== text) $('room-code').textContent = text;
+  const label = code ? `Mã phòng: ${text}` : '';
+  if ($('projector-code').textContent !== label) $('projector-code').textContent = label;
+}
+// Phone students asking to join (MSSV not on the list): ✓ adds them to the class and the room, ✗ drops the request.
+function renderJoins(rows) {
+  rows = rows || [];
+  $('join-card').hidden = !rows.length; $('join-badge').hidden = !rows.length;
+  $('join-count').textContent = rows.length; $('join-badge').textContent = rows.length;
+  const signature = JSON.stringify(rows.map(r => [r.student_id, r.student_name]));
+  if ($('join-list').dataset.signature === signature) return;
+  $('join-list').dataset.signature = signature;
+  $('join-list').replaceChildren(...rows.map(r => {
+    const row = document.createElement('div'); row.className = 'join-row';
+    const who = document.createElement('div');
+    const name = document.createElement('strong'); name.textContent = r.student_name;
+    const id = document.createElement('small'); id.textContent = `MSSV ${r.student_id}`;
+    who.append(name, id);
+    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'join-yes'; yes.textContent = '✓'; yes.title = 'Duyệt';
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'join-no'; no.textContent = '✗'; no.title = 'Từ chối';
+    yes.addEventListener('click', () => decideJoin('approve_join', [r.student_id], yes));
+    no.addEventListener('click', () => decideJoin('reject_join', [r.student_id], no));
+    row.append(who, yes, no); return row;
+  }));
+}
+async function decideJoin(action, ids, button) {
+  if (!sessionId) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api(action, {session_id:sessionId, student_ids:ids});
+    const skipped = result.skipped?.length ? ` Bỏ qua: ${result.skipped.join(', ')} (MSSV đã có).` : '';
+    notify((action === 'approve_join' ? `Đã duyệt ${result.done} sinh viên.` : `Đã từ chối ${result.done} yêu cầu.`) + skipped);
+    await bootstrap();
+  } catch (error) { notify(error.message, true); }
+  finally { if (button) button.disabled = false; }
 }
 function render(data) {
   const previous = current; current = data;
   if (previous && previous.session.id !== data.session.id) { revealed.clear(); shownColumns.clear(); analysisQuestionId = ''; }
   const state = data.session.state, active = state === 'QUESTION_ACTIVE', finished = state === 'FINISHED';
   $('room-title').textContent = data.session.title || `Kiểm tra lớp ${data.session.class_id}`;
+  showRoomCode(data.room_code); renderJoins(data.join_requests);
   $('room-badge').textContent = stateNames[state]; $('room-badge').className = 'state-badge ' + (state === 'LOGIN_OPEN' ? 'ready' : active ? 'active' : finished ? 'done' : '');
   $('session-status').textContent = `Session #${data.session.id} · ${data.session.class_id} · ${stateNames[state]} · AUTO ${data.session.auto_seconds} giây/câu`;
   selectOptions('question-select', data.questions, 'id', row => `Q${row.question_no}${row.closed_at ? ' · đã đóng' : ''}`, 'Chọn câu hỏi');
@@ -329,6 +574,11 @@ function render(data) {
   const chosen = data.questions.find(row => String(row.id) === $('question-select').value);
   const chosenStats = data.analysis.find(row => String(row.question_id) === String(chosen?.id));
   drawQuestion($('question-display'), chosen, false);
+  if (String(chosen?.id ?? '') !== resultsFor) { resultsOn = false; resultsFor = String(chosen?.id ?? ''); }
+  if (resultsOn && chosen) drawResults($('question-display'), chosen, chosenStats, data.roster.length);
+  fitProjector();
+  $('show-results').textContent = resultsOn ? 'Ẩn kết quả' : 'Hiện kết quả'; $('show-results').setAttribute('aria-pressed', String(resultsOn));
+  $('show-results').disabled = !chosen; $('edit-question').disabled = !chosen;
   $('question-status').textContent = active && String(chosen?.id) === String(data.question?.id) ? 'Đang mở' : chosen?.closed_at ? 'Đã đóng' : 'Chưa mở';
   $('question-status').className = 'state-badge ' + (active && String(chosen?.id) === String(data.question?.id) ? 'active' : chosen?.closed_at ? 'done' : '');
   const answered = chosenStats?.answered || 0, waiting = chosenStats?.waiting ?? data.roster.length;
@@ -336,7 +586,7 @@ function render(data) {
   $('stats').replaceChildren(statBox('Đăng nhập', `${data.logged_in}/${data.roster.length}`), statBox('Đã trả lời', `${answered}/${data.roster.length}`), statBox('Chưa trả lời', waiting), statBox('Đúng', chosenStats?.correct || 0), statBox('Sai', chosenStats?.wrong || 0), statBox('Tỷ lệ đúng', `${chosenStats?.accuracy || 0}%`));
   const percent = data.roster.length ? Math.round(answered / data.roster.length * 100) : 0;
   $('response-progress').style.width = percent + '%'; $('response-caption').textContent = `${percent}% sinh viên đã trả lời câu đang xem`;
-  $('distribution').replaceChildren(...distributionRows(chosenStats?.distribution || {A:0,B:0,C:0,D:0}, answered));
+  $('distribution').replaceChildren(...distributionRows(chosenStats?.distribution || {A:0,B:0,C:0,D:0}, answered)); $('dist-title').textContent = 'Phân bố đáp án';
   $('roster-preview').replaceChildren(...data.roster.map(student => {
     const row = document.createElement('div'); row.className = 'roster-person' + (!student.device_uid ? ' absent' : '');
     const name = document.createElement('strong'); name.textContent = `${student.student_no}. ${student.student_name}`;
@@ -366,6 +616,8 @@ function render(data) {
   $('export-csv').disabled = false; $('export-xlsx').disabled = false;
   $('privacy-mode').textContent = privacy ? 'Privacy: BẬT' : 'Privacy'; $('privacy-mode').setAttribute('aria-pressed', String(privacy));
   $('projector').textContent = document.body.classList.contains('projecting') ? 'Thoát trình chiếu' : 'Chế độ trình chiếu';
+  if (data.pacing === 'self') drawSelf(data, lock, active, finished); else { selfClock.end = 0; tickSelfClock(); }
+  document.body.classList.toggle('self-room', data.pacing === 'self');
   renderResults(data);
   renderAnalysis(data); updateClearButtons();
   if (data.mode && data.mode !== mode) applyMode(data.mode, true); else renderConnection();
@@ -389,74 +641,53 @@ function handle(id, event, callback) {
     finally { busy--; actionSeq++; button.disabled = false; if (current && !$('workspace').hidden) render(current); }
   });
 }
-$('toggle-register').addEventListener('click', () => {
-  registerMode = !registerMode;
-  $('auth-title').textContent = registerMode ? 'Tạo tài khoản giáo viên' : 'Chào mừng trở lại';
-  $('auth-submit').textContent = registerMode ? 'Đăng ký' : 'Đăng nhập';
-  $('toggle-register').textContent = registerMode ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký';
-  $('password').autocomplete = registerMode ? 'new-password' : 'current-password';
-});
-handle('teacher-login', 'submit', async () => {
-  const data = await api(registerMode ? 'teacher_register' : 'teacher_login',
-    {username:$('username').value,password:$('password').value});
-  csrf = data.csrf; $('password').value = ''; $('teacher-name').textContent = data.username;
-  showSignedIn(true); await bootstrap();
-  if (mode === 'wifi' && !remote) await loadWifiInfo();
-  notify(registerMode ? 'Đã tạo tài khoản.' : 'Đã đăng nhập.');
-});
-handle('wifi-config-form', 'submit', async () => {
-  $('wifi-config-state').textContent = 'Đang phát';
-  $('wifi-config-result').textContent = 'Đang gửi cấu hình Wi-Fi cho các ESP32 trong 30 giây…';
-  try {
-    const result = await api('wifi_provision', {ssid:$('wifi-ssid').value, password:$('wifi-password').value,
-      bssid:$('wifi-bssid').value, server_ip:$('wifi-server-ip').value});
-    $('wifi-password').value = '';
-    $('wifi-config-state').textContent = result.count ? 'Đã nhận' : 'Chưa xác nhận';
-    $('wifi-config-result').textContent = result.count ? `${result.count} ESP32 đã xác nhận: ${Object.entries(result.devices).map(([mac,ip]) => `${mac} (${ip})`).join(', ')}` : 'Chưa có ESP32 xác nhận. Kiểm tra OLED, BSSID, Wi-Fi 2,4 GHz và gửi lại.';
-    notify($('wifi-config-result').textContent, !result.count);
-  } catch (error) {
-    $('wifi-config-state').textContent = 'Lỗi';
-    $('wifi-config-result').textContent = error.message;
-    throw error;
-  }
-});
-handle('connect-gateway', 'click', async () => {
-  if (gatewayClient.uid) {
-    const port = gatewayClient.port;
-    await gatewayClient.disconnect('Đang kết nối lại Gateway…');
-    await gatewayClient.connect(port);
-  } else await gatewayClient.connectPrompt();
-});
-if ('serial' in navigator) navigator.serial.addEventListener('connect', () => {
-  if (mode === 'ble' && !$('workspace').hidden) gatewayClient.autoConnect().catch(() => {});
-});
 for (const button of document.querySelectorAll('#mode-switch button')) {
   button.addEventListener('click', async () => {
     if (button.dataset.mode === mode) return;
     try {
-      const result = await api('set_mode', {mode:button.dataset.mode}); applyMode(result.mode, true);
+      const result = await api('set_mode', {mode:button.dataset.mode}); keepMode(result.mode); applyMode(result.mode, true);
       notify(result.mode === 'ble' ? 'Đã chuyển sang BLE.' : 'Đã chuyển sang Wi-Fi.');
       await pollStatus();
     } catch (error) { notify(error.message, true); }
   });
   button.addEventListener('keydown', event => { if (['ArrowLeft','ArrowRight'].includes(event.key)) { event.preventDefault(); const other = document.querySelector(`#mode-switch button:not([data-mode="${button.dataset.mode}"])`); other.focus(); other.click(); } });
 }
-handle('logout', 'click', async () => { await gatewayClient.disconnect(); await api('logout', {}); location.reload(); });
+handle('gw-connect', 'click', async () => {
+  try { await gateway.connectPrompt(); notify('Đã kết nối Gateway USB.'); }
+  catch (error) { if (error.name !== 'NotFoundError') notify(error.message, true); }   // NotFoundError = closed the port picker
+});
+handle('gw-disconnect', 'click', async () => { await gateway.disconnect('off', 'Đã ngắt Gateway. Tag sẽ hiện nC sau vài giây.'); });
+handle('logout', 'click', async () => { await gateway.disconnect(); await api('logout', {}); location.replace('landing/'); });
 handle('student-import', 'submit', async () => {
   const file = $('students-file').files[0]; if (file.size > 1024*1024) throw new Error('Danh sách tối đa 1 MB.');
   if (!window.XLSX) throw new Error('Chưa tải được thư viện Excel.');
-  const workbook = XLSX.read(await file.arrayBuffer(), {type:'array', raw:true});
+  // CSV is read as UTF-8 text: as raw bytes SheetJS takes it for Latin-1 and "Họ tên" no longer matches.
+  const workbook = /\.csv$/i.test(file.name) ? XLSX.read(await file.text(), {type:'string', raw:true}) : XLSX.read(await file.arrayBuffer(), {type:'array', raw:true});
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header:1,defval:'',raw:false});
-  const headers = rows.shift().map(value => String(value).trim().toLowerCase().replace(/^\ufeff/,''));
-  const aliases = [['stt','student_no'],['mssv','student_id'],['họ tên','student_name'],['lớp','class_id']];
+  if (!rows.length) throw new Error('File không có dữ liệu.');
+  // Headers compared without accents or spaces, so "Họ và tên", "HO TEN", "Lớp học" also work.
+  const norm = value => String(value).replace(/^\ufeff/,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const headers = rows.shift().map(norm);
+  const aliases = [['stt','no','sothutu','student_no'],['mssv','masv','masosinhvien','studentid','student_id'],['hoten','hovaten','ten','name','fullname','student_name'],['lop','lophoc','class','classid','class_id']];
   const indexes = aliases.map(names => headers.findIndex(header => names.includes(header)));
   if (indexes.some(index => index < 0)) throw new Error('Cần cột STT, MSSV, Họ tên, Lớp.');
-  const students = rows.filter(row => row.some(value => String(value).trim())).map(row => Object.fromEntries(aliases.map((names,index) => [names[1], String(row[indexes[index]] ?? '').trim()])));
+  const students = rows.filter(row => row.some(value => String(value).trim())).map(row => Object.fromEntries(aliases.map((names,index) => [names.at(-1), String(row[indexes[index]] ?? '').trim()])));
   const result = await api('import_students', {students}); await bootstrap(); notify(`Đã nhập ${result.imported} sinh viên.`);
 });
-handle('exam-import', 'submit', async () => { const file = $('exam-file').files[0]; if (file.size > 500000) throw new Error('Đề tối đa 500 KB.'); const result = await api('import_exam', {title:$('exam-title').value,text:await file.text()}); await bootstrap(); $('exam-select').value = result.exam_id; updateClearButtons(); notify(`Đã nhập ${result.imported} câu hỏi.`); });
+// Segmented buttons switch the panes of their own card only (Lớp học and Bộ đề each have one).
+for (const tab of document.querySelectorAll('[data-seg]')) tab.addEventListener('click', () => {
+  const card = tab.closest('.card');
+  for (const t of card.querySelectorAll('[data-seg]')) t.setAttribute('aria-selected', String(t === tab));
+  for (const pane of card.querySelectorAll('[data-segpane]')) pane.hidden = pane.dataset.segpane !== tab.dataset.seg;
+});
+handle('open-class-form', 'submit', async () => {
+  const name = $('open-class-name').value.trim(); if (!name) throw new Error('Nhập tên lớp.');
+  await api('class_create', {class_id:name}); $('open-class-name').value = '';
+  await bootstrap(); $('class-select').value = name; updateClearButtons();
+  notify(`Đã tạo lớp ${name}.`);
+});
 handle('session-create', 'submit', async () => {
-  const result = await api('create_session', {title:$('session-title').value,class_id:$('class-select').value,exam_id:$('exam-select').value,auto_seconds:$('auto-seconds').value});
+  const result = await api('create_session', {mode, title:$('session-title').value,class_id:$('class-select').value,exam_id:$('exam-select').value,auto_seconds:$('auto-seconds').value,pacing:$('pacing-select').value});
   // Start the new room clean: nothing from the previous room (selected question, reveals) carries over.
   current = null; revealed.clear(); shownColumns.clear(); analysisQuestionId = '';
   await bootstrap(); $('session-select').value = result.session_id; sessionId = String(result.session_id); await refresh(true);
@@ -465,6 +696,8 @@ $('session-select').addEventListener('change', () => { sessionId = $('session-se
 $('question-select').addEventListener('change', () => { updateClearButtons(); if (current) render(current); });
 $('class-select').addEventListener('change', () => { updateClearButtons(); renderStudents(); });
 $('exam-select').addEventListener('change', updateClearButtons);
+// whichever way a class, set or room gets picked (list button, room form, × clear), its row in the list follows
+for (const id of ['class-select', 'exam-select', 'session-select']) $(id).addEventListener('change', () => markPicked(id));
 for (const button of document.querySelectorAll('[data-clear]')) button.addEventListener('click', () => { const select = $(button.dataset.clear); select.value = ''; select.dispatchEvent(new Event('change')); });
 const MESSAGES = {open_login:'Đã mở đăng nhập.', start_question:'Đã đóng đăng nhập và mở câu đầu tiên.', next_question:'Đã chuyển sang câu tiếp theo.', close_question:'Đã kết thúc buổi kiểm tra.'};
 for (const [id,action] of [['start-question','start_question'],['next-question','next_question'],['close-question','close_question']]) {
@@ -513,8 +746,15 @@ $('sort-wrong').addEventListener('click', () => { sortWrong = !sortWrong; if (cu
 handle('export-csv', 'click', async () => { if (!sessionId) throw new Error('Hãy chọn buổi học.'); location.href = `api.php?action=export&session_id=${sessionId}`; });
 handle('export-xlsx', 'click', async () => {
   if (!sessionId) throw new Error('Hãy chọn buổi học.'); await refresh();
-  const rows = [['STT','MSSV','Họ tên',...current.report.questions.map(q => 'Q'+q.question_no),'Đúng/Tổng','Tỷ lệ đúng (%)'],...current.report.rows.map(row => [row.student_no,String(row.student_id),row.student_name,...Object.values(row.answers),`${row.correct}/${row.total}`,row.percent])];
+  const rows = [['STT','MSSV','Họ tên',...current.report.questions.map(q => 'Q'+q.question_no),'Đúng/Tổng','Tỷ lệ đúng (%)','Điểm (thang 10)'],...current.report.rows.map(row => [row.student_no,String(row.student_id),row.student_name,...Object.values(row.answers),`${row.correct}/${row.total}`,row.percent,row.score10])];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Scores'); XLSX.writeFile(wb, `clicker-session-${sessionId}.xlsx`);
+});
+$('join-approve-all').addEventListener('click', () => decideJoin('approve_join', 'all', $('join-approve-all')));
+$('join-reject-all').addEventListener('click', () => { if (confirm(I18N.t('Từ chối tất cả yêu cầu đang chờ?'))) decideJoin('reject_join', 'all', $('join-reject-all')); });
+$('show-results').addEventListener('click', () => { resultsOn = !resultsOn; if (current) render(current); });
+$('edit-question').addEventListener('click', () => {
+  const id = $('question-select').value;
+  if (current && id) ExamEditor.quickEdit(Number(current.session.exam_id), Number(id));
 });
 $('projector').addEventListener('click', async () => {
   const on = !document.body.classList.contains('projecting');
@@ -523,6 +763,7 @@ $('projector').addEventListener('click', async () => {
   else if (document.fullscreenElement) await document.exitFullscreen();
   if (current) render(current);
 });
+window.addEventListener('resize', fitProjector);
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) { document.body.classList.remove('projecting'); if (current) render(current); } });
 $('delete-dialog').addEventListener('close', async () => {
   if ($('delete-dialog').returnValue !== 'confirm' || !pendingDelete) { pendingDelete = null; return; }
@@ -532,7 +773,19 @@ $('delete-dialog').addEventListener('close', async () => {
   catch (error) { notify(error.message, true); }
 });
 $('copy-phone-link').addEventListener('click', async () => { const link = $('phone-link').href; try { if (navigator.clipboard) await navigator.clipboard.writeText(link); else { const input = document.createElement('textarea'); input.value = link; document.body.append(input); input.select(); if (!document.execCommand('copy')) throw new Error('Không sao chép được.'); input.remove(); } notify('Đã sao chép liên kết điện thoại.'); } catch { notify('Hãy sao chép liên kết hiển thị trên trang.', true); } });
-api('auth', null, 'GET').then(async data => { csrf = data.csrf || ''; showSignedIn(data.authenticated); if (data.authenticated) { $('teacher-name').textContent = data.username; await bootstrap(); if (mode === 'wifi' && !remote) await loadWifiInfo(); } notify(data.authenticated ? 'Sẵn sàng.' : 'Nhập tên đăng nhập và mật khẩu 8 số để bắt đầu.'); }).catch(error => notify(error.message, true));
+// Waiting screen (logo C spinning on the brand green): shown while the page loads and when the network drops for
+// a couple of polls in a row; follows the projector into full screen so the class sees it too.
+let netFails = 0;
+function netWait(on, text) {
+  const box = $('net-wait');
+  if (text) $('net-wait-text').textContent = text;
+  const host = document.fullscreenElement || document.body;
+  if (on && box.parentElement !== host) host.append(box);
+  box.classList.toggle('on', on);
+}
+function netOk() { netFails = 0; netWait(false); }
+function netFail() { if (++netFails >= 2) netWait(true, 'Mạng chậm, đang kết nối lại…'); }
+api('auth', null, 'GET').then(async data => { if (freshPage(data.web)) return; csrf = data.csrf || ''; showSignedIn(data.authenticated); if (data.authenticated) { $('teacher-name').textContent = data.username; $('nav-admin').hidden = !data.is_admin; Account.init(data); $('view-banner').hidden = !data.view_as; $('view-name').textContent = data.view_as || ''; document.body.classList.toggle('viewing', !!data.view_as); if (data.is_admin && location.hash === '#admin-section') showView(); await bootstrap(); } if (data.authenticated) $('notice').classList.remove('show'); netOk(); }).catch(error => { notify(error.message, true); netWait(true, 'Chưa kết nối được máy chủ, đang thử lại…'); setTimeout(() => location.reload(), 4000); });
 // Limit: poll once per second for one classroom; use SSE when room count grows.
-setInterval(() => refresh().catch(error => notify('Mất kết nối: '+error.message, true)), 1000);
-setInterval(() => pollStatus().catch(() => {}), 2000);
+setInterval(() => refresh().catch(error => { notify('Mất kết nối: '+error.message, true); netFail(); }), 1000);
+setInterval(() => pollStatus().then(() => { if (netFails) netOk(); }).catch(() => netFail()), 2000);

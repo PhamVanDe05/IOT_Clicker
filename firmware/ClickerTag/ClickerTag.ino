@@ -6,7 +6,7 @@
 // GND and SRCLR to lat: the digits then never show anything.
 //
 // Build: Arduino IDE, core "Adafruit nRF52", board "Adafruit ItsyBitsy nRF52840 Express" (SuperMini, nice!nano bootloader).
-// Everything above the "Hardware" section is plain C++: tests/ble_test.cpp and tests/board_test.cpp compile this file on
+// Everything above the "Hardware" section is plain C++: tests/clicker_tag_test.cpp compiles this file on
 // the PC, where ARDUINO is not defined.
 
 #include <stdint.h>
@@ -29,7 +29,8 @@ const char KEYMAP[3][4] = {          // as printed on the PCB
     {KEY_BACK, '9', '0', KEY_OK},
 };
 
-const unsigned long LAMP_TEST_MS = 800;        // all segments on at power-up
+const unsigned long STARTUP_STEP_MS = 200;    // one segment per step around the two digits
+const uint8_t STARTUP_ROUNDS = 3;
 const unsigned long VIBRATE_MS = 60;           // one light buzz: raise for a stronger one
 const unsigned long DEBOUNCE_MS = 30, SCAN_MS = 5, BLINK_MS = 250;
 // One-digit mode: only the tens (left) digit is used. A one-character screen (question 1, answer A) sits on it;
@@ -40,6 +41,9 @@ const unsigned long CHAR_MS = 400, GAP_MS = 100;
 const unsigned long NOTICE_MS = 1500;          // "Hi" / error code on screen
 const unsigned long GATEWAY_TIMEOUT_MS = 5000; // no STATE heard for this long: "nC"
 const unsigned long DISPLAY_SLEEP_MS = 30000;  // digits off to save the cells; any key wakes them
+// End of the test: score SCORE_SHOW_MS, then "En" END_SHOW_MS, then the display sleeps. A logged-in tag still waiting
+// for its score shows "En" up to SCORE_WAIT_MS.
+const unsigned long SCORE_SHOW_MS = 5000, END_SHOW_MS = 3000, SCORE_WAIT_MS = 10000;
 const unsigned long RETRY_MS = 300, HELLO_MS = 1000;   // advert refresh: request waiting for ACK / heartbeat
 const uint16_t ADV_FAST = 160, ADV_SLOW = 800;         // advertising interval, 0.625 ms units
 const uint16_t SCAN_INTERVAL = 160, SCAN_WINDOW = 48;  // listen 30 ms every 100 ms
@@ -57,7 +61,7 @@ const uint8_t MAX_DIGITS = 20;
 enum FrameType : uint8_t { HELLO = 0x01, LOGIN = 0x02, ANSWER = 0x03, STATE = 0x80 };
 // DISABLED: the web is in Wi-Fi (ESP32) mode. OFFLINE: the gateway cannot reach the web or the server.
 enum State : uint8_t { WAIT_SESSION = 0, CREATED, LOGIN_OPEN, READY, QUESTION_ACTIVE, FINISHED, DISABLED, OFFLINE = 0xFF };
-enum Kind : uint8_t { NONE = 0, LOGIN_OK = 1, ANSWER_OK = 2, STATUS = 3, ERROR = 4 };   // reply in a STATE slot
+enum Kind : uint8_t { NONE = 0, LOGIN_OK = 1, ANSWER_OK = 2, STATUS = 3, ERROR = 4, SCORE = 5 };   // reply in a STATE slot
 enum ErrorCode : uint8_t {   // shown as "E<n>"
     E_LOGIN_CLOSED = 1, E_STUDENT_NOT_FOUND = 2, E_STUDENT_IN_USE = 3, E_DEVICE_IN_USE = 4,
     E_LOGIN_REQUIRED = 5, E_QUESTION_CLOSED = 6, E_ANSWER_LOCKED = 7, E_REJECTED = 8, E_GATEWAY = 9
@@ -65,13 +69,13 @@ enum ErrorCode : uint8_t {   // shown as "E<n>"
 
 struct Slot {
     uint8_t addr[3];
-    uint8_t kind, seq, value;   // STATUS value: 0 = not logged in, 'L' = logged in, 'A'-'D' = saved answer
+    uint8_t kind, seq, value;   // SCORE: seq=0, value=0..99; 255 withdraws the score
 };
 
 struct Uplink {   // tag -> gateway; HELLO reports what the tag believes so the web only corrects differences
     uint8_t type = HELLO, seq = 0, counter = 0;
     uint32_t session = 0, question = 0;
-    uint8_t logged = 0, answer = 0;
+    uint8_t logged = 0, answer = 0;   // HELLO: logged bit0=login, bit1=score; answer=score if bit1, else answer letter
     char student[MAX_DIGITS + 1] = {0};   // LOGIN only, digits
 };
 
@@ -184,7 +188,36 @@ const uint16_t ALL_OFF = 0xFFFF;
 inline char tensOf(unsigned n) { n %= 100; return n < 10 ? ' ' : char('0' + n / 10); }
 inline char unitsOf(unsigned n) { return char('0' + n % 10); }
 
+// Score out of 10 given in tenths: a whole score shows as a number (10 -> "10", 5.0 -> " 5"),
+// otherwise the two digits of the tenths (9.75 -> 97 -> "97", 0.5 -> "05").
+inline char scoreTens(unsigned tenths) { return tenths % 10 ? char('0' + tenths / 10 % 10) : tensOf(tenths / 10); }
+inline char scoreUnits(unsigned tenths) { return tenths % 10 ? char('0' + tenths % 10) : unitsOf(tenths / 10); }
+
 }  // namespace seg
+
+// A timer keeps BLE scanning and advertising throughout the power-up effect.
+struct StartupAnimation {
+    unsigned long startedAt = 0;
+    uint8_t step = 8 * STARTUP_ROUNDS;
+    bool running = false;
+
+    void begin(unsigned long now) { startedAt = now; step = 8 * STARTUP_ROUNDS; running = true; }
+
+    bool update(unsigned long now) {   // true once at the start of each round: buzz
+        if (!running) return false;
+        const unsigned long next = (now - startedAt) / STARTUP_STEP_MS;
+        if (next >= 8 * STARTUP_ROUNDS) { running = false; return false; }
+        if (next == step) return false;
+        step = uint8_t(next);
+        return step % 8 == 0;
+    }
+
+    uint16_t word() const {
+        const uint8_t tens[] =  {1, 0, 0, 0, 0, 8, 16, 32};   // a2 a1 b1 c1 d1 d2 e2 f2; digit 2 = left
+        const uint8_t units[] = {0, 1, 2, 4, 8, 0, 0, 0};
+        return running ? seg::word(tens[step % 8], units[step % 8]) : seg::ALL_OFF;
+    }
+};
 
 // ====================================================================================== Keys
 namespace keys {
@@ -220,6 +253,9 @@ struct Tag {
     bool heard = false, logged = false, accepted = false, awake = true, pending = false;
     bool vibrate = false;    // one light buzz requested; the sketch clears it
     char selected = 0;       // 'A'-'D'
+    bool hasScore = false;
+    uint8_t score = 0;       // score out of 10, in tenths cut down (9.75 -> 97), 0..100
+    unsigned long scoreAt = 0, finishedAt = 0;
     char input[ble::MAX_DIGITS + 1] = {0};
     uint8_t inputLen = 0, seq = 0;
     ble::Uplink request;     // sent until its ACK or ERROR arrives
@@ -231,7 +267,9 @@ struct Tag {
     // ------------------------------------------------------------------ from the gateway
     void onDownlink(const ble::Downlink &d, unsigned long now) {
         heard = true; lastHeard = now;
+        if (d.session != session || (state == ble::FINISHED && d.state != ble::FINISHED)) clearScore(now);
         if (d.session != session) { logged = false; accepted = false; selected = 0; clearInput(); wake(now); }
+        if (d.state == ble::FINISHED && state != ble::FINISHED) finishedAt = now;
         if (d.question != question || d.state != state) {
             if (!accepted || d.question != question) { selected = 0; accepted = false; }
             if (d.state == ble::QUESTION_ACTIVE && d.question != question && logged) vibrate = true;   // new question
@@ -243,9 +281,18 @@ struct Tag {
     }
 
     void onSlot(const ble::Slot &s, unsigned long now) {
+        if (s.kind == ble::SCORE) {
+            if (state != ble::FINISHED || !logged || s.seq != 0) return;
+            if (s.value == 255) clearScore(now);
+            else if (s.value <= 100 && (!hasScore || score != s.value)) {
+                score = s.value; hasScore = true; scoreAt = now; wake(now);
+            }
+            return;   // a score never acknowledges a pending LOGIN or ANSWER
+        }
         if (s.kind == ble::STATUS) {   // server truth for this tag; never overrides a request still waiting
             if (pending) return;
             logged = s.value != 0;
+            if (!logged) clearScore(now);
             if (s.value >= 'A' && s.value <= 'D') { selected = char(s.value); accepted = true; }
             else if (accepted) { selected = 0; accepted = false; }
             return;
@@ -306,8 +353,9 @@ struct Tag {
     ble::Uplink uplink() const {   // the request until its ACK, else a HELLO heartbeat
         if (pending) return request;
         ble::Uplink u;
-        u.session = session; u.question = question; u.logged = logged;
-        u.answer = accepted ? uint8_t(selected) : 0;
+        u.session = session; u.question = question;
+        u.logged = uint8_t((logged ? 1 : 0) | (hasScore ? 2 : 0));
+        u.answer = hasScore ? score : (accepted ? uint8_t(selected) : 0);
         return u;
     }
 
@@ -324,7 +372,7 @@ struct Tag {
         if (gatewayLost(now)) return {'n', 'C', false};
         if (state == ble::OFFLINE) return {'n', 'S', false};
         if (state == ble::DISABLED) return {'O', 'F', false};
-        if (state == ble::FINISHED) return {'E', 'n', false};
+        if (state == ble::FINISHED) return finished(now);
         if (state == ble::WAIT_SESSION || state == ble::CREATED) return {'-', '-', false};
         if (!logged) {
             if (state != ble::LOGIN_OPEN) return {'L', 'C', false};
@@ -336,7 +384,20 @@ struct Tag {
         return {seg::tensOf(questionNo), seg::unitsOf(questionNo), false};
     }
 
+    // Score for SCORE_SHOW_MS, "En" for END_SHOW_MS, then the display sleeps. A key pressed afterwards shows "En".
+    Screen finished(unsigned long now) {
+        const unsigned long start = hasScore ? scoreAt : finishedAt;
+        const unsigned long scoreEnd = start + (hasScore ? SCORE_SHOW_MS : 0);
+        const unsigned long end = scoreEnd + (hasScore || !logged ? END_SHOW_MS : SCORE_WAIT_MS);
+        if (activeAt <= end) {
+            if (now < scoreEnd) return {seg::scoreTens(score), seg::scoreUnits(score), false};
+            if (now >= end) { awake = false; return {' ', ' ', false}; }
+        }
+        return {'E', 'n', false};
+    }
+
   private:
+    void clearScore(unsigned long now) { if (hasScore) { hasScore = false; wake(now); } }
     void clearInput() { inputLen = 0; input[0] = 0; }
     void showNotice(char a, char b, unsigned long now) { notice[0] = a; notice[1] = b; noticeAt = now; wake(now); }
     static Screen lastTwo(const char *s, bool blink) {
@@ -364,6 +425,7 @@ inline char oneDigit(const Screen &s, unsigned long now) {
 #include <nrf_gpio.h>
 
 Tag tag;
+StartupAnimation startup;
 QueueHandle_t downlinks;   // STATE frames from the scanner callback (BLE task) to loop()
 
 // ------------------------------------------------------------------ display: call these to show anything
@@ -519,6 +581,7 @@ void releaseNfcPins() {
 }
 
 void render(unsigned long now) {
+    if (startup.running) { display::latch(startup.word()); return; }
     const Screen s = tag.screen(now);
     if (!tag.awake) display::off();
     else if (ONE_DIGIT) display::show(oneDigit(s, now), ' ');
@@ -534,18 +597,20 @@ void setup() {
     keypad::begin();
     downlinks = xQueueCreate(8, sizeof(ble::Downlink));
 
-    display::allOn();          // lamp test, then "--" until the gateway is heard
-    delay(LAMP_TEST_MS);
     radio::begin();
-    tag.wake(millis());
+    const unsigned long now = millis();
+    tag.wake(now);
+    startup.begin(now);
 }
 
 void loop() {
     const unsigned long now = millis();
     ble::Downlink d;
     while (xQueueReceive(downlinks, &d, 0) == pdTRUE) tag.onDownlink(d, now);
-    keypad::update(now);
-    if (tag.vibrate) { tag.vibrate = false; motor::buzz(now); }
+    const bool startupBuzz = startup.update(now);
+    if (!startup.running) keypad::update(now);   // keys start taking input once the 4.8 s effect ends
+    if (startupBuzz || (!startup.running && tag.vibrate)) motor::buzz(now);
+    tag.vibrate = false;
     motor::update(now);
     radio::update(now);
     render(now);

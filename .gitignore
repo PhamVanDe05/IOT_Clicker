@@ -1,0 +1,10 @@
+.venv/
+.local/
+firmware/.pio/
+firmware/include/secrets.h
+legacy/firmware/SmartClickerESP32/device_key.h
+__pycache__/
+
+# STEP exports of the 3D cases (39 MB): kept on disk for SolidWorks, rebuilt from the .scad files
+hardware/case/*/step/
+

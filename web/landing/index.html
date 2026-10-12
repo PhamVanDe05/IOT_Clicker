@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<meta name="theme-color" content="#0F2E3A">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="description" content="Hệ thống trắc nghiệm bằng máy bấm cho lớp học: học sinh bấm chọn đáp án, kết quả cả lớp hiện ngay trên màn hình, chấm điểm tự động. Không cần Internet.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Clicker">
+<meta property="og:locale" content="vi_VN">
+<meta property="og:title" content="Clicker · Click See Teach">
+<meta property="og:description" content="Hệ thống trắc nghiệm bằng máy bấm cho lớp học: học sinh bấm chọn đáp án, kết quả cả lớp hiện ngay trên màn hình, chấm điểm tự động. Không cần Internet.">
+<meta property="og:url" content="https://clicker.tailbc421d.ts.net/clicker/landing/">
+<meta property="og:image" content="https://clicker.tailbc421d.ts.net/clicker/landing/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Click See Teach — hệ thống trắc nghiệm bằng máy bấm cho lớp học">
+<meta name="twitter:card" content="summary_large_image">
+<title>Clicker · Click See Teach</title>
+<link rel="stylesheet" href="site.css?v=23">
+</head>
+<body>
+
+<div id="prog"></div>
+
+<div id="bar">
+  <div class="c">
+    <span><b>Mới:</b> Soạn đề bằng AI đang được phát triển.</span>
+    <a href="#ai">Xem trước <span aria-hidden="true">→</span></a>
+  </div>
+  <button type="button" aria-label="Đóng thông báo" id="bar-x">×</button>
+</div>
+
+<header id="hd">
+  <div class="c nav">
+    <a class="brand" href="#top"><i>C</i>Clicker</a>
+    <ul class="menu">
+      <li><a href="#feat">Tính năng</a></li>
+      <li>
+        <button type="button" aria-haspopup="true">Giải pháp
+          <svg class="chev" width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M9.3 12.95l.7.7L15.66 8l-1.42-1.41L10 10.83 5.76 6.59 4.34 8z"/></svg></button>
+        <div class="drop">
+          <div><h4>Dùng cho</h4>
+            <a href="#cases">Trường phổ thông</a><a href="#cases">Đại học, cao đẳng</a><a href="#cases">Đào tạo nghề</a></div>
+          <div><h4>Tình huống</h4>
+            <a href="#cases">Giảng dạy trực tiếp</a><a href="#cases">Kiểm tra, đánh giá</a><a href="#cases">Ôn tập, luyện tập</a><a href="#cases">Tương tác cả lớp</a></div>
+        </div>
+      </li>
+      <li><a href="#ai">AI <span class="spark">✦</span></a></li>
+      <li><a href="#why">Vì sao chọn</a></li>
+      <li><a href="pricing.html">Bảng giá</a></li>
+    </ul>
+    <div class="auth">
+      <div class="lang" data-lang-menu></div>
+      <a class="login" href="login.html">Đăng nhập</a>
+      <a class="btn btn-p btn-sm" href="login.html#register">Bắt đầu miễn phí</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+<!-- ================= HERO ================= -->
+<section class="hero">
+  <div class="blob b1" data-par="-0.12"></div><div class="blob b2" data-par="0.08"></div>
+  <div class="c center" style="position:relative">
+    <div class="join" data-rv>
+      <span>Vào lớp học?</span>
+      <form id="join"><input name="code" placeholder="Nhập mã phòng" maxlength="7" inputmode="numeric" autocomplete="off" required aria-label="Mã phòng">
+        <button type="submit" aria-label="Vào phòng">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button></form>
+      <p id="join-msg" class="join-msg" role="status" aria-live="polite" data-noi18n></p>
+    </div>
+
+    <h1 class="cst" aria-label="Click See Teach">
+      <span class="cw c1" style="--i:0">Click</span><span class="arw" style="--i:0" aria-hidden="true"><svg viewBox="0 0 100 60"><path class="a1" d="M4 56 C 18 -2, 78 -8, 94 44"/><path class="a2" d="M80 36 L94 46 L99 29"/></svg></span>
+      <span class="cw" style="--i:1">See</span><span class="arw dn" style="--i:1" aria-hidden="true"><svg viewBox="0 0 100 60"><path class="a1" d="M4 56 C 18 -2, 78 -8, 94 44"/><path class="a2" d="M80 36 L94 46 L99 29"/></svg></span>
+      <span class="cw" style="--i:2">Teach</span>
+    </h1>
+    <div class="trio">
+      <div class="t" data-rv data-d="700"><b>Click</b><span>Học sinh bấm chọn đáp án.</span></div>
+      <div class="t" data-rv data-d="820"><b>See</b><span>Kết quả cả lớp hiện ngay.</span></div>
+      <div class="t" data-rv data-d="940"><b>Teach</b><span>Dạy học hiệu quả thông minh.</span></div>
+    </div>
+    <div class="ctas" data-rv data-d="200">
+      <a class="btn btn-p" href="login.html#register">Bắt đầu miễn phí <span class="arr">→</span></a>
+      <a class="btn btn-o" href="#feat">Xem cách hoạt động</a>
+    </div>
+
+    <div class="demo" id="demo" data-rv="zoom" data-d="250" data-tilt>
+      <div class="demo-top"><span class="dots"><i></i><i></i><i></i></span><b>Lớp 12A1</b>· Câu 3/10<span class="live">TRỰC TIẾP</span></div>
+      <div class="demo-in">
+        <div class="dq">
+          <span class="qn">Câu 3</span>
+          <h3>BLE advertising dùng bao nhiêu kênh quảng bá?</h3>
+          <div class="ans"><span class="f"></span><span class="k">A</span><span class="t">1 kênh</span><span class="p num">0%</span></div>
+          <div class="ans"><span class="f"></span><span class="k">B</span><span class="t">2 kênh</span><span class="p num">0%</span></div>
+          <div class="ans ok"><span class="f"></span><span class="k">C</span><span class="t">3 kênh</span><span class="p num">0%</span></div>
+          <div class="ans"><span class="f"></span><span class="k">D</span><span class="t">40 kênh</span><span class="p num">0%</span></div>
+        </div>
+        <div class="dg">
+          <div class="row"><span>Đã trả lời</span><b class="num"><span id="dn">0</span>/40</b></div>
+          <div class="meter"><i id="dm"></i></div>
+          <div class="cells" id="dc"></div>
+          <div class="score">Cả lớp làm đúng <b class="num" id="ds">0%</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat" data-rv data-d="100"><b class="num" data-to="40" data-suf="+">0</b><span>máy bấm cùng lúc</span></div>
+      <div class="stat" data-rv data-d="200"><b class="num" data-to="1" data-pre="&lt; " data-suf=" giây">0</b><span>từ lúc bấm đến màn hình</span></div>
+      <div class="stat" data-rv data-d="300"><b class="num" data-to="100" data-suf="%">0</b><span>bài được chấm tự động</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FEATURES ================= -->
+<section class="s" id="feat">
+  <div class="c">
+    <div class="center">
+      <span class="kick" data-rv>Tính năng</span>
+      <h2 class="h2" data-rv data-d="100">Bớt việc lặp lại, <span class="hl wavy">dành trọn thời gian để dạy.<svg viewBox="0 0 300 24" preserveAspectRatio="none"><path d="M3 13 C 18 3, 33 3, 48 13 S 78 23, 93 13 S 123 3, 138 13 S 168 23, 183 13 S 213 3, 228 13 S 258 23, 273 13 S 293 5, 297 9"/></svg></span></h2>
+    </div>
+
+    <div class="feats">
+      <div class="feat" data-rv>
+        <div class="ft"><span class="n">01</span><h3>Phản hồi tức thì</h3>
+          <p>Bấm xong là biết đúng sai, kèm lời giải ngắn. Không phải chờ, không phải hỏi lại.</p></div>
+        <div class="art" data-rv="right" data-d="120">
+          <div class="card fb">
+            <div class="q"></div><div class="q s"></div>
+            <div class="pick"><i>B</i>2 kênh</div>
+            <div class="pick ok"><i>C</i>3 kênh</div>
+            <div class="toast"><s>✓</s><span><b>Chính xác.</b> Kênh 37, 38, 39 dành cho quảng bá.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feat rev" data-rv>
+        <div class="ft"><span class="n">02</span><h3>Báo cáo linh hoạt</h3>
+          <p>Bảng điểm, phân tích từng câu, phiếu cho từng sinh viên. Xuất Excel một chạm.</p></div>
+        <div class="art" data-rv="left" data-d="120">
+          <div class="card rp">
+            <div class="bars"><i style="height:58%"></i><i style="height:74%;transition-delay:.08s"></i><i style="height:92%;transition-delay:.16s"></i><i class="lo" style="height:36%;transition-delay:.24s"></i><i style="height:80%;transition-delay:.32s"></i><i style="height:66%;transition-delay:.4s"></i></div>
+            <div class="lab"><span>C1</span><span>C2</span><span>C3</span><span>C4</span><span>C5</span><span>C6</span></div>
+            <div class="xl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Bảng_điểm_12A1.xlsx</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feat" data-rv>
+        <div class="ft"><span class="n">03</span><h3>Chấm tự động, giúp đúng người</h3>
+          <p>Hệ thống tự chấm và chỉ ra ai đang tụt lại. Bạn dành thời gian cho người cần nhất.</p></div>
+        <div class="art" data-rv="right" data-d="120">
+          <div class="card gr" id="gr">
+            <div class="g" id="grg"></div>
+            <div class="need"><b class="top">Giỏi nhất: Minh An</b><b>Cần hỗ trợ: 3 bạn</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= AI ================= -->
+<div class="aiw" id="ai">
+  <section class="ai">
+    <div class="c">
+      <div data-rv>
+        <svg width="28" height="28" viewBox="0 0 20 20" fill="var(--gold)"><path d="M15.98 1.8a1 1 0 0 0-1.96 0l-.24 1.2a1 1 0 0 1-.78.78l-1.2.24a1 1 0 0 0 0 1.96l1.2.24a1 1 0 0 1 .78.78l.24 1.2a1 1 0 0 0 1.96 0l.24-1.2a1 1 0 0 1 .78-.78l1.2-.24a1 1 0 0 0 0-1.96l-1.2-.24a1 1 0 0 1-.78-.78l-.24-1.2ZM6.95 5.68a1 1 0 0 0-1.9 0l-.68 2.05a1 1 0 0 1-.63.63l-2.05.69a1 1 0 0 0 0 1.9l2.05.68a1 1 0 0 1 .63.63l.68 2.05a1 1 0 0 0 1.9 0l.68-2.05a1 1 0 0 1 .64-.63l2.05-.68a1 1 0 0 0 0-1.9l-2.05-.69a1 1 0 0 1-.64-.63l-.68-2.05Z"/></svg>
+        <h2><span class="grad">Soạn đề nhanh hơn với AI</span></h2>
+        <div class="tabs" id="tabs" role="tablist">
+          <div class="tab on" role="tab" tabindex="0" aria-selected="true"><h3>Tạo đề trong vài giây</h3>
+            <div class="d"><p>Mô tả đề bạn cần, AI soạn sẵn câu hỏi và đáp án.</p></div></div>
+          <div class="tab" role="tab" tabindex="0" aria-selected="false"><h3>Bám sát giáo trình</h3>
+            <div class="d"><p>Dựa trên tài liệu bạn đã có để ra câu hỏi đúng bài.</p></div></div>
+          <div class="tab" role="tab" tabindex="0" aria-selected="false"><h3>Biến đề cũ thành đề mới</h3>
+            <div class="d"><p>Đưa file Word hoặc Excel cũ vào, nhận ngay bộ đề dùng được.</p></div></div>
+        </div>
+        <p style="margin-top:34px"><span class="soon">✦ SẮP RA MẮT</span></p>
+      </div>
+
+      <div class="screens" data-rv="zoom" data-d="150">
+        <div class="scr on">
+          <div class="w"><small>Bạn mô tả</small><div class="type" id="type" data-noi18n></div></div>
+          <div class="gen" id="gen">
+            <div><i>1</i>BLE quảng bá trên những kênh nào?</div>
+            <div><i>2</i>MQTT QoS 1 bảo đảm điều gì?</div>
+            <div><i>3</i>Vì sao cần prepared statement?</div>
+          </div>
+        </div>
+        <div class="scr">
+          <div class="w"><small>Tài liệu</small><b>Giáo trình IoT · Chương 4: BLE</b></div>
+          <div class="gen on-all">
+            <div class="on"><i>✓</i>12 câu hỏi sát nội dung chương</div>
+            <div class="on"><i>✓</i>Đáp án kèm lời giải thích</div>
+            <div class="on"><i>✓</i>Chia mức dễ, vừa, khó</div>
+          </div>
+        </div>
+        <div class="scr">
+          <div class="flow">
+            <div class="doc"><em>de_cu.docx</em><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            <span class="arrow">→</span>
+            <div class="doc" style="background:var(--mint)"><em style="color:var(--green-ink)">Bộ đề mới</em><span style="background:#fff"></span><span style="background:#fff"></span><span style="background:#fff"></span><span style="background:#fff"></span><span style="background:#fff"></span><span style="background:#fff"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ================= USE CASES ================= -->
+<section class="s" id="cases">
+  <div class="c">
+    <div class="center">
+      <span class="kick" data-rv>Giải pháp</span>
+      <h2 class="h2" data-rv data-d="100">Dùng trong mọi khoảnh khắc của tiết học</h2>
+    </div>
+    <div class="cases">
+      <div class="case" data-rv>
+        <span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <h3>Giảng dạy trực tiếp</h3><p>Hỏi nhanh giữa giờ, cả lớp trả lời trong vài giây.</p>
+        <a class="btn-t" href="#chat" data-ask="Dùng Clicker để giảng dạy trực tiếp trên lớp như thế nào?">Tìm hiểu thêm <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a></div>
+      <div class="case" data-rv data-d="100">
+        <span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+        <h3>Kiểm tra, đánh giá</h3><p>Từ bài 15 phút đến giữa kỳ, nộp là có điểm.</p>
+        <a class="btn-t" href="#chat" data-ask="Dùng Clicker để kiểm tra, đánh giá như thế nào?">Tìm hiểu thêm <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a></div>
+      <div class="case" data-rv data-d="200">
+        <span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>
+        <h3>Ôn tập, luyện tập</h3><p>Khởi động đầu giờ, phiếu cuối giờ, ôn trước kỳ thi.</p>
+        <a class="btn-t" href="#chat" data-ask="Dùng Clicker để ôn tập, luyện tập như thế nào?">Tìm hiểu thêm <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a></div>
+      <div class="case" data-rv data-d="300">
+        <span class="ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg></span>
+        <h3>Tương tác cả lớp</h3><p>Ai cũng được hỏi, kể cả người ngại giơ tay.</p>
+        <a class="btn-t" href="#chat" data-ask="Clicker giúp cả lớp cùng tương tác như thế nào?">Tìm hiểu thêm <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WHY (marquee) ================= -->
+<section class="s" id="why" style="padding-top:0">
+  <div class="c center">
+    <span class="kick" data-rv>Vì sao chọn Clicker</span>
+    <h2 class="h2" data-rv data-d="100">Lý do giáo viên chọn Clicker</h2>
+  </div>
+  <div class="mq" data-rv data-d="200"><div class="track" id="track" data-noi18n></div></div>
+</section>
+
+<!-- ================= CTA ================= -->
+<div class="ctaw">
+  <section class="cta">
+    <div class="grid"></div>
+    <h2 data-rv>Sẵn sàng cho tiết học tiếp theo?</h2>
+    <p data-rv data-d="100">Không cần Internet, không cài gì trên máy sinh viên. Mọi thứ chạy ngay trong lớp.</p>
+    <div data-rv data-d="200"><a class="btn btn-gold" href="login.html#register">Bắt đầu miễn phí <span class="arr">→</span></a></div>
+  </section>
+</div>
+</main>
+
+<footer id="ft"></footer>
+
+<script src="i18n.js?v=8"></script>
+<script src="assistant.js?v=5" defer></script>
+<script src="site.js?v=4"></script>
+<script>
+const tilt = $('[data-tilt]');
+$('#demo').addEventListener('reveal', () => setTimeout(demo, 700));
+$('#gr').closest('[data-rv]').addEventListener('reveal', () => setTimeout(grade, 400));
+
+/* tilt the demo toward the pointer */
+if (tilt && !calm && matchMedia('(pointer:fine)').matches) {
+  tilt.addEventListener('mousemove', e => {
+    const r = tilt.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+    tilt.style.transform = `perspective(1600px) rotateX(${-y * 4}deg) rotateY(${x * 5}deg)`;
+  });
+  tilt.addEventListener('mouseleave', () => tilt.style.transform = '');
+}
+
+/* spotlight that follows the pointer on use-case cards */
+$$('.case').forEach(c => c.addEventListener('mousemove', e => {
+  const r = c.getBoundingClientRect();
+  c.style.setProperty('--mx', `${e.clientX - r.left}px`); c.style.setProperty('--my', `${e.clientY - r.top}px`);
+}));
+
+/* join a room: the six-digit code on the teacher's screen is checked by room.php, then the phone clicker opens */
+const joinMsg = $('#join-msg');
+function joinSay(text, bad) {
+  joinMsg.textContent = I18N.t(text); joinMsg.classList.toggle('bad', bad); joinMsg.classList.add('on');
+  if (!bad) return;
+  const box = $('.join'); box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+}
+$('#join').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = e.target.code.value.replace(/\D/g, '');
+  if (code.length !== 6) return joinSay('Mã phòng gồm 6 chữ số.', true);
+  joinSay('Đang kiểm tra…', false);
+  try {
+    const d = await (await fetch('../room.php?code=' + code, { credentials: 'same-origin' })).json();
+    if (d.ok) { joinSay('Đúng phòng! Đang vào…', false); location.href = '../phone.html?room=' + code; return; }
+    joinSay(d.code === 'RATE_LIMIT' ? 'Bạn nhập sai nhiều lần, chờ một phút rồi thử lại.'
+      : d.code === 'ROOM_CODE' ? 'Mã phòng gồm 6 chữ số.' : 'Mã phòng không đúng hoặc phòng chưa mở.', true);
+  } catch { joinSay('Chưa kết nối được máy chủ, thử lại sau nhé.', true); }
+});
+$('#join').code.addEventListener('input', () => joinMsg.classList.remove('on'));
+
+/* hero demo: 40 students answer, then the class result is revealed; loops */
+const dc = $('#dc'); dc.innerHTML = '<span></span>'.repeat(40);
+const cells = [...dc.children], PCT = [8, 15, 65, 12];
+function demo() {
+  const d = $('#demo'); d.classList.remove('done');
+  cells.forEach(c => c.classList.remove('on'));
+  $$('#demo .ans .f').forEach(f => f.style.width = '0'); $$('#demo .ans .p').forEach(p => p.textContent = '0%');
+  $('#dn').textContent = 0; $('#dm').style.width = '0'; $('#ds').textContent = '0%';
+  const order = cells.map((_, i) => i).sort(() => Math.random() - .5);
+  let n = 0;
+  const t = setInterval(() => {
+    cells[order[n]].classList.add('on'); n++;
+    $('#dn').textContent = n; $('#dm').style.width = n / 40 * 100 + '%';
+    if (n < 40) return;
+    clearInterval(t);
+    setTimeout(() => {
+      d.classList.add('done');
+      $$('#demo .ans').forEach((a, i) => { a.querySelector('.f').style.width = PCT[i] + '%'; a.querySelector('.p').textContent = PCT[i] + '%'; });
+      const s = $('#ds'); delete s.dataset.done; s.dataset.to = 65; s.dataset.suf = '%'; count(s);
+      setTimeout(demo, 5200);
+    }, 350);
+  }, 60);
+}
+
+/* feature 3: grid fills in, then the two chips appear */
+function grade() {
+  const g = $('#grg'); g.innerHTML = '<span></span>'.repeat(32);
+  const s = [...g.children];
+  s.forEach((c, i) => setTimeout(() => c.style.background = Math.random() < .78 ? 'var(--ok)' : 'var(--bad)', 40 * i));
+  $$('#gr .need b').forEach((b, i) => setTimeout(() => b.classList.add('on'), 40 * s.length + 250 * i));
+}
+
+/* AI tabs: auto-advance every 6 s, pause while hovered */
+const tabs = $$('.tab'), scr = $$('.scr'), tabsEl = $('#tabs');
+let cur = 0, timer;
+function show(i) {
+  cur = i;
+  tabs.forEach((t, k) => { t.classList.toggle('on', k === i); t.setAttribute('aria-selected', k === i); });
+  scr.forEach((s, k) => s.classList.toggle('on', k === i));
+  if (i === 0) typeIt();
+  clearTimeout(timer); timer = setTimeout(() => show((cur + 1) % tabs.length), 6000);
+}
+tabs.forEach((t, i) => {
+  t.addEventListener('click', () => show(i));
+  t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(i); } });
+});
+tabsEl.addEventListener('mouseenter', () => { clearTimeout(timer); tabsEl.classList.add('hold'); });
+tabsEl.addEventListener('mouseleave', () => { tabsEl.classList.remove('hold'); timer = setTimeout(() => show((cur + 1) % tabs.length), 3000); });
+new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { show(0); o.disconnect(); } }, { threshold: .3 }).observe($('#ai'));
+
+const PROMPT = 'Tạo 10 câu trắc nghiệm về BLE và MQTT cho sinh viên năm 3';
+let typeRun = 0;
+function typeIt() {
+  const run = ++typeRun, el = $('#type'), rows = $$('#gen div'), PROMPT_T = I18N.t(PROMPT);
+  el.textContent = ''; rows.forEach(r => r.classList.remove('on'));
+  let i = 0;
+  const step = () => {
+    if (run !== typeRun) return;
+    el.textContent = PROMPT_T.slice(0, ++i);
+    if (i < PROMPT_T.length) return setTimeout(step, 28);
+    rows.forEach((r, k) => setTimeout(() => run === typeRun && r.classList.add('on'), 350 + 280 * k));
+  };
+  step();
+}
+
+/* marquee: statement cards, duplicated once so the loop is seamless */
+const WHY = [
+  ['Không còn cảnh giơ tay.', 'Ai cũng trả lời, không ai bị bỏ qua.'],
+  ['Biết lớp hiểu tới đâu', 'trước khi chuyển sang bài mới.'],
+  ['Chấm 40 bài trong 0 phút.', 'Điểm có ngay khi câu hỏi đóng.'],
+  ['Không cần điện thoại.', 'Mỗi sinh viên một máy bấm riêng.'],
+  ['Không cần Internet.', 'Chạy trên laptop ngay trong lớp.'],
+  ['Dữ liệu là của bạn.', 'Lưu trên máy, xuất Excel bất cứ lúc nào.'],
+];
+const Q = '<svg width="38" height="32" viewBox="0 0 44 38" fill="currentColor"><path d="M25.7 37.5V24.8c0-6.6 1.5-12 4.5-16.2C33.2 4.2 37.6 1.4 43.4.1v6.8c-3.2.8-5.6 2.3-7.1 4.5-1.5 2.1-2.4 4.8-2.8 8.1h6.9v18H25.7ZM.6 37.5V24.8c0-6.6 1.5-12 4.4-16.2C8 4.2 12.4 1.4 18.2.1v6.8c-3.1.8-5.5 2.3-7.1 4.5-1.5 2.1-2.4 4.8-2.7 8.1h6.8v18H.6Z"/></svg>';
+function why() {
+  const cards = WHY.map(([a, b]) => `<div class="qc">${Q}<p>${I18N.t(a)}</p><span>${I18N.t(b)}</span></div>`).join('');
+  $('#track').innerHTML = cards + cards;
+}
+why();
+document.addEventListener('langchange', () => { why(); if (tabs[0].classList.contains('on')) typeIt(); });
+</script>
+</body>
+</html>

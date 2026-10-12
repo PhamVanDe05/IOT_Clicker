@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<meta name="theme-color" content="#0F2E3A">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="description" content="Hệ thống trắc nghiệm bằng máy bấm cho lớp học: học sinh bấm chọn đáp án, kết quả cả lớp hiện ngay trên màn hình, chấm điểm tự động. Không cần Internet.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Clicker">
+<meta property="og:locale" content="vi_VN">
+<meta property="og:title" content="Clicker · Đăng nhập giáo viên">
+<meta property="og:description" content="Hệ thống trắc nghiệm bằng máy bấm cho lớp học: học sinh bấm chọn đáp án, kết quả cả lớp hiện ngay trên màn hình, chấm điểm tự động. Không cần Internet.">
+<meta property="og:url" content="https://clicker.tailbc421d.ts.net/clicker/landing/login.html">
+<meta property="og:image" content="https://clicker.tailbc421d.ts.net/clicker/landing/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Click See Teach — hệ thống trắc nghiệm bằng máy bấm cho lớp học">
+<meta name="twitter:card" content="summary_large_image">
+<title>Clicker · Đăng nhập</title>
+<link rel="stylesheet" href="site.css?v=23">
+<style>
+[hidden]{display:none!important}
+body{background:var(--soft);min-height:100vh}
+.auth-wrap{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr}
+/* ---------- left: form ---------- */
+.side{display:flex;flex-direction:column;padding:28px 56px 36px}
+.side .top{display:flex;align-items:center;justify-content:space-between}
+.side .top a.back{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:var(--ink-2);font-size:15.5px;transition:color .2s}
+.side .top a.back:hover{color:var(--green)}
+.box{width:100%;max-width:440px;margin:auto;padding:40px 0}
+.box h1{font-size:clamp(34px,3.4vw,44px);color:var(--deep);margin-bottom:10px}
+.box .sub2{font-size:17px;color:var(--ink-2);margin-bottom:30px}
+
+.who{position:relative;display:grid;grid-template-columns:1fr 1fr;padding:5px;border-radius:16px;background:#fff;border:1px solid var(--line);margin-bottom:30px;box-shadow:var(--sh)}
+.who button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:9px;padding:13px;border:0;border-radius:12px;background:none;
+  font-weight:700;font-size:16px;color:var(--ink-2);cursor:pointer;transition:color .3s var(--ease)}
+.who button.on{color:#fff}
+.who i{position:absolute;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:12px;background:var(--green);
+  box-shadow:0 8px 18px -8px rgba(23,129,110,.7);transition:transform .45s var(--ease)}
+.who.st i{transform:translateX(100%)}
+
+.pane{animation:paneIn .45s var(--ease)}
+@keyframes paneIn{from{opacity:0;transform:translateY(12px)}}
+.sso{display:grid;gap:10px}
+.sso button{display:flex;align-items:center;justify-content:center;gap:12px;min-height:52px;border:1.5px solid var(--line);border-radius:14px;background:#fff;
+  font-weight:700;font-size:16px;color:var(--ink);cursor:pointer;transition:border-color .2s,transform .2s var(--ease),box-shadow .2s}
+.sso button:hover{border-color:var(--green);transform:translateY(-1px);box-shadow:var(--sh)}
+.or{display:flex;align-items:center;gap:14px;margin:24px 0;color:var(--ink-3);font-size:14px;font-weight:600}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.fld{position:relative;margin-bottom:16px}
+.fld label{display:block;font-size:14.5px;font-weight:700;color:var(--deep);margin-bottom:8px}
+.fld input{width:100%;min-height:54px;padding:0 50px 0 18px;border:1.5px solid var(--line);border-radius:14px;background:#fff;font-size:16.5px;
+  transition:border-color .2s,box-shadow .2s}
+.fld input:focus{outline:0;border-color:var(--green);box-shadow:0 0 0 4px rgba(23,129,110,.14)}
+.fld.bad input{border-color:var(--bad);box-shadow:0 0 0 4px rgba(224,72,62,.1)}
+.fld .eye{position:absolute;right:8px;bottom:8px;width:38px;height:38px;border:0;border-radius:10px;background:none;color:var(--ink-3);cursor:pointer;display:grid;place-items:center}
+.fld .eye:hover{background:var(--soft);color:var(--green)}
+.fld .msg{font-size:13.5px;color:var(--bad);margin-top:6px;min-height:0}
+.digits{display:flex;gap:5px;margin-top:10px}
+.digits span{flex:1;height:5px;border-radius:9px;background:var(--line);transition:background .25s var(--ease)}
+.digits span.on{background:var(--green)}
+.row2{display:flex;justify-content:space-between;align-items:center;margin:-2px 0 22px;font-size:15px}
+.link{background:none;border:0;padding:0;font-weight:700;color:var(--green);cursor:pointer;font-size:inherit}
+.link:hover{text-decoration:underline}
+.go{width:100%}
+.go[disabled]{opacity:.75;cursor:wait}
+.spin{width:20px;height:20px;border-radius:50%;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.alert{display:none;gap:10px;align-items:flex-start;padding:13px 16px;border-radius:12px;margin-bottom:18px;font-size:15px;line-height:1.45}
+.alert.show{display:flex;animation:paneIn .35s var(--ease)}
+.alert.err{background:#FDECEA;color:#A52D25}
+.alert.info,.alert.ok{background:var(--mint);color:var(--green-ink)}
+.shake{animation:shake .45s var(--ease)}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.foot{text-align:center;margin-top:26px;font-size:15.5px;color:var(--ink-2)}
+.done{display:none;text-align:center;padding:40px 0}
+.pw-wait{text-align:center;padding:42px 26px;border-radius:26px;color:#fff;background:radial-gradient(120% 90% at 80% 0%,#17816E 0%,#0F2E3A 55%,#0A222D 100%);box-shadow:var(--sh-lg);animation:paneIn .4s var(--ease)}
+.pw-wait h2{margin:22px 0 6px;font-size:24px}
+.pw-wait p{margin:0 0 6px;color:rgba(255,255,255,.85)}
+.pw-wait .pw-note{font-size:14px;color:rgba(255,255,255,.65);margin-top:10px}
+.pw-cancel{margin-top:14px;color:#fff!important;opacity:.8}
+.pw-logo{position:relative;width:96px;height:96px;margin:0 auto;display:grid;place-items:center}
+.pw-logo i{display:grid;place-items:center;width:72px;height:72px;border-radius:22px;font:800 40px/1 var(--font);font-style:normal;color:#F3B862;background:linear-gradient(140deg,#0F2E3A,#17816E);box-shadow:0 18px 40px -12px rgba(0,0,0,.6),inset 0 0 0 1.5px rgba(255,255,255,.15);animation:pwPulse 1.6s ease-in-out infinite}
+.pw-ring{position:absolute;inset:-6px;border-radius:50%;border:4px solid rgba(255,255,255,.12);border-top-color:#F3B862;border-right-color:#7DD3B8;animation:pwSpin 1s linear infinite}
+@keyframes pwSpin{to{transform:rotate(360deg)}}@keyframes pwPulse{50%{transform:scale(.92)}}
+.pw-form,.pw-no{animation:paneIn .4s var(--ease)}
+.pw-form h2,.pw-no h2{font-size:28px;color:var(--deep);margin:10px 0 6px}
+.pw-ok{display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:var(--mint);color:var(--green);font-size:30px;font-weight:800}
+.pw-form .go{width:100%;margin-top:6px}
+.pw-no .btn{margin-top:18px}
+.done.show{display:block;animation:paneIn .4s var(--ease)}
+.done svg circle{stroke-dasharray:190;stroke-dashoffset:190;animation:draw .7s var(--ease) forwards}
+.done svg path{stroke-dasharray:60;stroke-dashoffset:60;animation:draw .45s var(--ease) .55s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.done h2{font-size:30px;color:var(--deep);margin:18px 0 8px}
+.steps3{display:grid;gap:14px;margin:6px 0 28px}
+.steps3 div{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:14px;background:#fff;border:1px solid var(--line)}
+.steps3 b{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--mint);color:var(--green-ink);font-size:15px}
+.steps3 p{font-size:16px;color:var(--ink-2)}
+.steps3 strong{color:var(--deep)}
+
+/* ---------- right: brand panel ---------- */
+.art-side{position:relative;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;padding:60px;
+  background:radial-gradient(90% 120% at 100% 0%,#1C6B5E 0%,var(--deep) 55%,var(--deep-2) 100%)}
+.art-side .grid{position:absolute;inset:-30px;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);
+  background-size:34px 34px;-webkit-mask-image:radial-gradient(circle at 70% 30%,#000,transparent 70%);mask-image:radial-gradient(circle at 70% 30%,#000,transparent 70%);
+  animation:drift 26s linear infinite}
+.art-side .glow{position:absolute;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(243,184,98,.32),transparent 65%);left:-160px;bottom:-200px;filter:blur(20px)}
+.art-side > *{position:relative}
+.art-side h2{font-size:clamp(34px,3.2vw,48px);max-width:14ch;margin-bottom:18px}
+.art-side h2.cst-s{font-size:clamp(52px,5.4vw,86px);line-height:.98;letter-spacing:-.05em}
+.art-side h2.cst-s span{color:#7DD3B8}
+.art-side p.l{font-size:18.5px;color:rgba(255,255,255,.8);max-width:36ch}
+.mini{margin-top:46px;max-width:440px;background:#fff;color:var(--ink);border-radius:22px;padding:22px;box-shadow:0 40px 80px -30px rgba(0,0,0,.6);
+  animation:float 6s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-10px)}}
+.mini .h{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;font-weight:800;color:var(--ink-3);letter-spacing:.06em;margin-bottom:14px}
+.mini .h b{color:var(--green)}
+.mini .bars{display:grid;gap:9px}
+.mini .bar{display:flex;align-items:center;gap:12px;font-weight:700;font-size:14.5px}
+.mini .bar i{flex:none;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#fff;font-style:normal;font-size:13px}
+.mini .bar s{flex:1;height:12px;border-radius:9px;background:var(--soft);overflow:hidden;text-decoration:none}
+.mini .bar s u{display:block;height:100%;width:0;border-radius:9px;background:var(--green-lt);transition:width 1.1s var(--ease)}
+.mini .bar.ok s u{background:var(--green)}
+.mini .bar em{font-style:normal;width:40px;text-align:right;color:var(--ink-2)}
+.chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}
+.chips span{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:99px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);font-size:14.5px;font-weight:600}
+.chips span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--gold)}
+
+
+/* staggered entrance */
+.stg{animation:paneIn .6s var(--ease) backwards}
+/* pointer glow + tilting card on the brand panel */
+.art-side .spot{position:absolute;width:420px;height:420px;border-radius:50%;pointer-events:none;left:0;top:0;
+  background:radial-gradient(circle,rgba(125,211,184,.22),transparent 65%);transform:translate(-50%,-50%);transition:opacity .4s;opacity:0}
+.art-side:hover .spot{opacity:1}
+.mini{transition:transform .5s var(--ease)}
+.tilt-wrap{animation:float 6s ease-in-out infinite}
+.tilt-wrap .mini{animation:none}
+/* rotating benefit line */
+.rot{position:relative;height:1.6em;margin-top:14px;overflow:hidden;font-size:17px;font-weight:700;color:var(--gold)}
+.rot span{position:absolute;inset:0;opacity:0;transform:translateY(100%);transition:opacity .5s var(--ease),transform .5s var(--ease)}
+.rot span.on{opacity:1;transform:none}
+.rot span.out{opacity:0;transform:translateY(-100%)}
+/* page leaves smoothly after a successful sign-in */
+body.leave .auth-wrap{opacity:0;transform:scale(.985);transition:opacity .45s var(--ease),transform .45s var(--ease)}
+#burst{position:fixed;inset:0;pointer-events:none;z-index:99}
+@media (prefers-reduced-motion:reduce){.stg,.tilt-wrap{animation:none}.art-side .spot{display:none}}
+
+@media (max-width:980px){.auth-wrap{grid-template-columns:1fr}.art-side{display:none}.side{padding:22px 22px 30px}}
+</style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="side">
+    <div class="top">
+      <a class="brand" href="index.html"><i>C</i>Clicker</a>
+      <div style="display:flex;align-items:center;gap:14px"><div class="lang" data-lang-menu></div><a class="back" href="index.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>Trang chủ</a></div>
+    </div>
+
+    <div class="box">
+      <div id="signed" class="done">
+        <svg width="84" height="84" viewBox="0 0 64 64" fill="none" stroke="var(--green)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="29"/><path d="M20 33l8 8 16-17"/></svg>
+        <h2 id="signed-t" data-noi18n>Đăng nhập thành công</h2>
+        <p class="sub2" id="signed-s" data-noi18n>Đang mở bảng điều khiển…</p>
+        <a class="btn btn-p go" href="../">Vào bảng điều khiển <span class="arr">→</span></a>
+        <p class="foot"><button class="link" id="switch-acc" type="button">Dùng tài khoản khác</button></p>
+      </div>
+
+      <!-- Quên mật khẩu: wait for the admin's approval, then set a new password here -->
+      <div id="pw" class="pw" hidden>
+        <div id="pw-wait" class="pw-wait">
+          <div class="pw-logo" aria-hidden="true"><span class="pw-ring"></span><i>C</i></div>
+          <h2>Đang chờ quản trị viên cấp phép</h2>
+          <p id="pw-who" data-noi18n></p>
+          <p class="pw-note">Giữ trang này mở. Khi được cấp phép, ô đặt mật khẩu mới sẽ tự hiện ra.</p>
+          <button type="button" class="link pw-cancel" id="pw-cancel">Huỷ yêu cầu</button>
+        </div>
+        <form id="pw-form" class="pw-form" hidden novalidate>
+          <div class="pw-ok" aria-hidden="true">✓</div>
+          <h2>Đặt mật khẩu mới</h2>
+          <p class="sub2">Quản trị viên đã cấp phép cho <b id="pw-name" data-noi18n></b>.</p>
+          <div class="fld"><label for="pw1">Mật khẩu mới (8 chữ số)</label><input id="pw1" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" placeholder="8 chữ số"></div>
+          <div class="fld"><label for="pw2">Nhập lại mật khẩu mới</label><input id="pw2" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" placeholder="8 chữ số"></div>
+          <div class="alert err" id="pw-err" data-noi18n role="alert"></div>
+          <button class="btn btn-p go" id="pw-go" type="submit">Lưu và đăng nhập <span class="arr">→</span></button>
+        </form>
+        <div id="pw-no" class="pw-no" hidden>
+          <h2>Yêu cầu không được chấp nhận</h2>
+          <p class="sub2" id="pw-no-t">Quản trị viên đã từ chối hoặc yêu cầu đã hết hạn. Hãy liên hệ trực tiếp quản trị viên.</p>
+          <button type="button" class="btn btn-o" id="pw-back">Quay lại đăng nhập</button>
+        </div>
+      </div>
+
+      <div id="forms">
+
+        <!-- ===== Teacher ===== -->
+        <div id="teacher" class="pane">
+          <h1 id="t-title" data-noi18n class="stg" style="animation-delay:.12s">Chào mừng trở lại</h1>
+          <p class="sub2 stg" id="t-sub" data-noi18n style="animation-delay:.18s">Đăng nhập để soạn đề và điều khiển lớp học.</p>
+
+          <div class="sso stg" style="animation-delay:.24s">
+            <button type="button" data-sso="Google">
+              <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+              Tiếp tục với Google</button>
+          </div>
+          <div class="or">hoặc</div>
+
+          <div class="alert err" id="t-err" data-noi18n role="alert"></div>
+          <form id="t-form" class="stg" style="animation-delay:.32s" novalidate>
+            <div class="fld" id="f-user">
+              <label for="user" id="user-l" data-noi18n>Tên đăng nhập</label>
+              <input id="user" name="username" autocomplete="username" maxlength="80" placeholder="Ví dụ: Nguyen Van An">
+              <div class="msg" data-noi18n></div>
+            </div>
+            <div class="fld" id="f-pass">
+              <label for="pass">Mật khẩu (8 chữ số)</label>
+              <input id="pass" name="password" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" placeholder="8 chữ số">
+              <button type="button" class="eye" data-eye="pass" aria-label="Hiện mật khẩu"></button>
+              <div class="digits" id="digits" hidden></div>
+              <div class="msg" data-noi18n></div>
+            </div>
+            <div class="fld" id="f-pass2" hidden>
+              <label for="pass2">Nhập lại mật khẩu</label>
+              <input id="pass2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" placeholder="8 chữ số">
+              <button type="button" class="eye" data-eye="pass2" aria-label="Hiện mật khẩu"></button>
+              <div class="msg" data-noi18n></div>
+            </div>
+            <div class="row2" id="forgot-row"><span></span><button type="button" class="link" id="forgot">Quên mật khẩu?</button></div>
+            <button class="btn btn-p go" id="t-go" type="submit"><span id="t-go-t" data-noi18n>Đăng nhập</span> <span class="arr">→</span></button>
+          </form>
+          <p class="foot" id="t-foot" data-noi18n>Chưa có tài khoản? <button type="button" class="link" id="to-reg">Tạo tài khoản miễn phí</button></p>
+          <p class="foot st-note">Học sinh không cần tài khoản: nhập MSSV ngay trên máy bấm, hoặc <a class="link" href="../phone.html">mở máy bấm trên điện thoại</a>.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <aside class="art-side">
+    <div class="grid"></div><div class="glow"></div><div class="spot" id="spot"></div>
+    <h2 class="cst-s"><span>Click</span><br>See<br>Teach</h2>
+    <p class="l">Soạn đề, mở phòng và xem kết quả cả lớp ngay trên màn hình.</p>
+    <div class="rot" id="rot"><span class="on">✦ Chấm điểm tự động khi câu hỏi đóng</span><span>✦ Biết ngay câu nào cả lớp làm sai</span><span>✦ Xuất bảng điểm Excel một chạm</span></div>
+    <div class="tilt-wrap"><div class="mini" id="mini" aria-hidden="true">
+      <div class="h"><span>CÂU 3 · CẢ LỚP</span><b id="mini-n">0/40</b></div>
+      <div class="bars">
+        <div class="bar"><i style="background:#3F6FD8">A</i><s><u></u></s><em>8%</em></div>
+        <div class="bar"><i style="background:#E08A1E">B</i><s><u></u></s><em>15%</em></div>
+        <div class="bar ok"><i style="background:#7C5CE0">C</i><s><u></u></s><em>65%</em></div>
+        <div class="bar"><i style="background:#D6457D">D</i><s><u></u></s><em>12%</em></div>
+      </div>
+    </div></div>
+    <div class="chips"><span>Không cần Internet</span><span>Máy bấm BLE</span><span>Xuất Excel</span></div>
+  </aside>
+</div>
+<canvas id="burst" hidden></canvas>
+
+<script src="i18n.js?v=8"></script>
+<script src="assistant.js?v=5" defer></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const EYE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17.9 17.9A10.1 10.1 0 0 1 12 20C5 20 1 12 1 12a18.4 18.4 0 0 1 5.1-5.9M9.9 4.2A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.2 3.2M1 1l22 22"/></svg>';
+let reg = false;
+const T = (s, v) => I18N.t(s, v);
+let signedMsg = null;   // [title, vars, subtitle] of the signed-in panel, redrawn on language change
+
+/* Existing teacher API: same-origin, the session cookie is scoped to /clicker/. */
+async function api(body) {
+  const r = await fetch('../api.php', { method: body ? 'POST' : 'GET', credentials: 'same-origin',
+    headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  let data = {}; try { data = await r.json(); } catch {}
+  if (!r.ok || data.ok === false) throw new Error(T(data.error || 'Máy chủ chưa phản hồi. Thử lại sau.'));
+  return data;
+}
+
+/* Login / register mode */
+function labels() {
+  const r = reg;
+  $('#t-title').textContent = T(r ? 'Tạo tài khoản giáo viên' : 'Chào mừng trở lại');
+  $('#t-sub').textContent = T(r ? 'Miễn phí, chỉ mất một phút.' : 'Đăng nhập để soạn đề và điều khiển lớp học.');
+  $('#user-l').textContent = T(r ? 'Họ và tên (dùng để đăng nhập)' : 'Tên đăng nhập');
+  const goLabel = $('#t-go-t'); if (goLabel) goLabel.textContent = T(r ? 'Tạo tài khoản' : 'Đăng nhập');   // gone while the button spins
+  $('#t-foot').innerHTML = r ? `${T('Đã có tài khoản?')} <button type="button" class="link" id="to-log">${T('Đăng nhập')}</button>`
+                             : `${T('Chưa có tài khoản?')} <button type="button" class="link" id="to-reg">${T('Tạo tài khoản miễn phí')}</button>`;
+  ($('#to-reg') || $('#to-log')).addEventListener('click', () => mode(!reg));
+  $$('[data-eye]').forEach(b => b.setAttribute('aria-label', T($('#' + b.dataset.eye).type === 'password' ? 'Hiện mật khẩu' : 'Ẩn mật khẩu')));
+  if (signedMsg) { $('#signed-t').textContent = T(signedMsg[0], signedMsg[1]); $('#signed-s').textContent = T(signedMsg[2]); }
+}
+function mode(r) {
+  reg = r;
+  $('#pass').autocomplete = r ? 'new-password' : 'current-password';
+  $('#f-pass2').hidden = !r; $('#digits').hidden = !r; $('#forgot-row').hidden = r;
+  labels();
+  clearErr(); $('#teacher').classList.remove('pane'); void $('#teacher').offsetWidth; $('#teacher').classList.add('pane');
+  history.replaceState(null, '', r ? '#register' : '#');
+  $('#user').focus();
+}
+document.addEventListener('langchange', labels);
+
+/* Show / hide password */
+$$('[data-eye]').forEach(b => {
+  b.innerHTML = EYE;
+  b.addEventListener('click', () => { const i = $('#' + b.dataset.eye), show = i.type === 'password';
+    i.type = show ? 'text' : 'password'; b.innerHTML = show ? EYE_OFF : EYE; b.setAttribute('aria-label', T(show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu')); });
+});
+
+/* 8 bars that fill as digits are typed */
+$('#digits').innerHTML = '<span></span>'.repeat(8);
+['#pass', '#pass2'].forEach(s => $(s).addEventListener('input', e => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 8);
+  if (s === '#pass') $$('#digits span').forEach((d, i) => d.classList.toggle('on', i < e.target.value.length));
+  fieldErr(e.target.closest('.fld'), '');
+}));
+$('#user').addEventListener('input', () => fieldErr($('#f-user'), ''));
+
+function fieldErr(f, msg) { const m = f?.querySelector('.msg'); if (!m) return; f.classList.toggle('bad', !!msg); m.textContent = msg ? T(msg) : ''; }
+function clearErr() { $('#t-err').classList.remove('show'); $$('#t-form .fld').forEach(f => fieldErr(f, '')); }
+function showErr(msg) { const a = $('#t-err'); a.textContent = msg; a.classList.add('show'); shake(); }
+function shake() { const b = $('.box'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+
+function validate() {
+  let ok = true; clearErr();
+  const u = $('#user').value.trim(), p = $('#pass').value, p2 = $('#pass2').value;
+  if (!u) { fieldErr($('#f-user'), reg ? 'Hãy nhập họ và tên.' : 'Hãy nhập tên đăng nhập.'); ok = false; }
+  else if (reg && u.length < 3) { fieldErr($('#f-user'), 'Tên cần ít nhất 3 ký tự.'); ok = false; }
+  if (!/^\d{8}$/.test(p)) { fieldErr($('#f-pass'), 'Mật khẩu cần đúng 8 chữ số.'); ok = false; }
+  if (reg && p2 !== p) { fieldErr($('#f-pass2'), 'Hai mật khẩu chưa khớp.'); ok = false; }
+  if (!ok) shake();
+  return ok;
+}
+
+$('#t-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!validate()) return;
+  const go = $('#t-go'), label = go.innerHTML;
+  go.disabled = true; go.innerHTML = '<span class="spin"></span>' + T(reg ? 'Đang tạo tài khoản' : 'Đang đăng nhập');
+  try {
+    const d = await api({ action: reg ? 'teacher_register' : 'teacher_login', username: $('#user').value.trim(), password: $('#pass').value });
+    signedIn(d.username, reg);
+  } catch (err) { showErr(err.message); go.disabled = false; go.innerHTML = label; }
+});
+
+function signedIn(name, isNew) {
+  // Leave for the dashboard first, so nothing below can keep the teacher stuck on this page.
+  setTimeout(() => document.body.classList.add('leave'), 1250);
+  setTimeout(() => location.href = '../', 1700);
+  $('#forms').hidden = true; $('#signed').classList.add('show');
+  signedMsg = [isNew ? 'Tạo tài khoản thành công' : 'Xin chào, {name}', { name }, 'Đang mở bảng điều khiển…'];
+  labels();
+  try { burst(); } catch {}
+}
+
+/* Quên mật khẩu: send a request, wait (green screen, spinning C) until the admin approves it from the bell,
+   then set a new password here and go straight in. The request belongs to this browser only. */
+let pwTimer = 0;
+function pwShow(state, name) {
+  const on = state === 'waiting' || state === 'approved' || state === 'rejected' || state === 'expired';
+  $('#pw').hidden = !on; $('#forms').hidden = on; if (on) $('#signed').classList.remove('show');
+  $('#pw-wait').hidden = state !== 'waiting'; $('#pw-form').hidden = state !== 'approved';
+  $('#pw-no').hidden = !(state === 'rejected' || state === 'expired');
+  if (name) { $('#pw-who').textContent = T('Tài khoản: {n}', { n: name }); $('#pw-name').textContent = name; }
+  clearInterval(pwTimer);
+  if (state === 'waiting') pwTimer = setInterval(pwPoll, 3000);
+  if (state === 'approved') setTimeout(() => $('#pw1').focus(), 100);
+}
+async function pwPoll() {
+  try {
+    const r = await fetch('../api.php?action=password_status', { credentials: 'same-origin' }); const d = await r.json();
+    if (d.state !== 'waiting') pwShow(d.state === 'none' ? 'rejected' : d.state, d.name);
+  } catch {}
+}
+$('#forgot').addEventListener('click', async () => {
+  const a = $('#t-err'), who = $('#user').value.trim();
+  if (!who) { a.className = 'alert info show'; a.textContent = T('Gõ tên đăng nhập (hoặc Gmail) vào ô trên rồi bấm lại "Quên mật khẩu?".'); $('#user').focus(); return; }
+  const b = $('#forgot'); b.disabled = true;
+  try { await api({ action: 'password_request', username: who }); pwShow('waiting', who); }
+  catch (err) { showErr(err.message); }
+  finally { b.disabled = false; }
+});
+$('#pw-cancel').addEventListener('click', async () => { try { await api({ action: 'password_cancel' }); } catch {} pwShow('none'); });
+$('#pw-back').addEventListener('click', () => pwShow('none'));
+$('#pw-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const p1 = $('#pw1').value, p2 = $('#pw2').value, err = $('#pw-err');
+  err.classList.remove('show');
+  if (!/^[0-9]{8}$/.test(p1)) { err.textContent = T('Mật khẩu cần đúng 8 chữ số.'); err.classList.add('show'); return; }
+  if (p1 !== p2) { err.textContent = T('Hai lần nhập mật khẩu không giống nhau.'); err.classList.add('show'); return; }
+  const go = $('#pw-go'); go.disabled = true;
+  try {
+    const d = await api({ action: 'password_set', password: p1, password2: p2 });
+    $('#pw').hidden = true; signedIn(d.username, false);
+  } catch (x) { err.textContent = x.message; err.classList.add('show'); go.disabled = false; }
+});
+// Back on this page while a request is pending or approved (e.g. after a refresh): pick it up again.
+fetch('../api.php?action=password_status', { credentials: 'same-origin' }).then(r => r.json()).then(d => { if (d.state === 'waiting' || d.state === 'approved') pwShow(d.state, d.name); }).catch(() => {});
+/* Google: go through oauth.php once the server has the provider's app credentials */
+let sso = { google: false };
+fetch('oauth.php?status=1', { credentials: 'same-origin' }).then(r => r.json()).then(d => sso = d).catch(() => {});
+$$('[data-sso]').forEach(b => b.addEventListener('click', () => {
+  const p = b.dataset.sso.toLowerCase();
+  if (!sso[p]) { const a = $('#t-err'); a.className = 'alert info show';
+    a.textContent = T('Đăng nhập bằng {p} chưa được bật: quản trị viên cần cấu hình ứng dụng {p} trên máy chủ.', { p: b.dataset.sso }); return; }
+  b.disabled = true; b.innerHTML = `<span class="spin" style="border-color:rgba(15,46,58,.2);border-top-color:var(--green)"></span>${T('Đang chuyển tới {p}…', { p: b.dataset.sso })}`;
+  location.href = 'oauth.php?p=' + p;
+}));
+/* Errors handed back by oauth.php */
+const OAUTH_ERR = {
+  OAUTH_NOT_CONFIGURED: 'Đăng nhập bằng tài khoản này chưa được bật trên máy chủ.',
+  OAUTH_CANCELLED: 'Bạn đã huỷ đăng nhập.',
+  OAUTH_STATE: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Hãy thử lại.',
+  OAUTH_TOKEN: 'Không xác minh được tài khoản với nhà cung cấp. Hãy thử lại.',
+  OAUTH_NETWORK: 'Máy chủ không kết nối được Internet để xác minh tài khoản.',
+  OAUTH_HOST: 'Hãy mở trang bằng http://localhost/clicker hoặc đường dẫn công khai để đăng nhập bằng Google.',
+  OAUTH_PROFILE: 'Không đọc được thông tin tài khoản.',
+  HTTPS_REQUIRED: 'Trang công khai chỉ hỗ trợ HTTPS.',
+  ACCOUNT_DISABLED: 'Tài khoản đã bị khoá. Hãy liên hệ quản trị viên.',
+  REGISTER_OFF: 'Đang tạm dừng đăng ký tài khoản mới. Hãy liên hệ quản trị viên.',
+  RATE_LIMIT: 'Thử quá nhiều lần. Hãy chờ vài phút.',
+  SERVER_ERROR: 'Máy chủ gặp lỗi khi đăng nhập. Hãy thử lại.',
+};
+const err = new URLSearchParams(location.search).get('err');
+if (err) { const a = $('#t-err'); a.className = 'alert err show'; a.textContent = T(OAUTH_ERR[err] || 'Đăng nhập chưa thành công. Hãy thử lại.');
+  history.replaceState(null, '', location.pathname); }
+
+/* Already signed in: offer to continue instead of showing the form */
+api().then(d => {
+  if (!d.authenticated) return;
+  if (location.hash === '#welcome') { history.replaceState(null, '', location.pathname); signedIn(d.username, false); return; }
+  $('#forms').hidden = true; $('#signed').classList.add('show');
+  signedMsg = ['Bạn đang đăng nhập: {name}', { name: d.username }, 'Tiếp tục vào bảng điều khiển, hoặc đổi tài khoản.'];
+  labels();
+}).catch(() => {});
+$('#switch-acc').addEventListener('click', async () => {
+  const d = await api().catch(() => ({}));
+  if (d.csrf) await fetch('../api.php', { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': d.csrf }, body: JSON.stringify({ action: 'logout' }) }).catch(() => {});
+  signedMsg = null; $('#signed').classList.remove('show'); $('#forms').hidden = false; mode(false);
+});
+
+
+/* brand panel: pointer glow and a card that leans toward the pointer */
+const side = $('.art-side'), spot = $('#spot'), card = $('#mini');
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (!still && matchMedia('(pointer:fine)').matches) {
+  side.addEventListener('mousemove', e => {
+    const r = side.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    spot.style.left = x + 'px'; spot.style.top = y + 'px';
+    card.style.transform = `perspective(1200px) rotateY(${(x / r.width - .5) * 10}deg) rotateX(${-(y / r.height - .5) * 8}deg)`;
+  });
+  side.addEventListener('mouseleave', () => card.style.transform = '');
+}
+/* rotating benefit line */
+const rot = $$('#rot span'); let ri = 0;
+if (!still) setInterval(() => {
+  const cur = rot[ri]; cur.classList.remove('on'); cur.classList.add('out');
+  setTimeout(() => cur.classList.remove('out'), 500);
+  ri = (ri + 1) % rot.length; rot[ri].classList.add('on');
+}, 3200);
+/* small confetti burst on success */
+function burst() {
+  if (still) return;
+  const cv = $('#burst'), cx = cv.getContext('2d'); cv.hidden = false; cv.width = innerWidth; cv.height = innerHeight;
+  const box = $('.box').getBoundingClientRect(), ox = box.left + box.width / 2, oy = box.top + box.height * .35;
+  const cols = ['#17816E', '#7DD3B8', '#F3B862', '#0F2E3A'];
+  const ps = Array.from({ length: 70 }, () => ({ x: ox, y: oy, vx: (Math.random() - .5) * 12, vy: -4 - Math.random() * 9,
+    s: 4 + Math.random() * 5, a: Math.random() * 6, c: cols[Math.random() * 4 | 0] }));
+  let f = 0;
+  (function tick() {
+    cx.clearRect(0, 0, cv.width, cv.height);
+    ps.forEach(p => { p.vy += .32; p.x += p.vx; p.y += p.vy; p.a += .2;
+      cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.fillStyle = p.c; cx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * .6); cx.restore(); });
+    if (++f < 90) requestAnimationFrame(tick); else cv.hidden = true;
+  })();
+}
+
+/* Brand panel: the class answers, bars fill, then it loops */
+const bars = $$('.mini .bar u'), PCT = [8, 15, 65, 12];
+function mini() {
+  bars.forEach(b => b.style.width = '0');
+  let n = 0; const t = setInterval(() => { n++; $('#mini-n').textContent = n + '/40'; if (n >= 40) {
+    clearInterval(t); bars.forEach((b, i) => b.style.width = PCT[i] + '%'); setTimeout(mini, 4200); } }, 45);
+}
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) mini(); else bars.forEach((b, i) => b.style.width = PCT[i] + '%');
+
+/* Deep link: #register */
+if (location.hash === '#register') mode(true);
+labels();
+document.addEventListener('DOMContentLoaded', I18N.start);
+</script>
+</body>
+</html>

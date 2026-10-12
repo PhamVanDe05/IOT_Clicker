@@ -1,78 +1,292 @@
 'use strict';
+// Student page for any browser (phone, laptop). Wi-Fi mode: room code -> MSSV (+ name if not on the list) ->
+// waiting screen -> A/B/C/D. A BLE room: the page becomes a simulated Student Tag that really logs in and answers.
+// Several rooms can run at once: the room code is sent with every request, so the server knows which room this is.
+// Server side: phone-api.php (poll / login / register / answer) and room.php (room code check).
 const $ = id => document.getElementById(id);
-const state = {uid:'',csrf:'',session:null,mode:'WAIT_SESSION',student:'',question:null,input:'',selected:'',pending:null,online:false,busy:false,message:'',storage:true};
-const keys=[...document.querySelectorAll('[data-key]')];
-function storageKey(){return 'clicker-pending-'+state.uid;}
-function savePending(){try{if(state.pending)localStorage.setItem(storageKey(),JSON.stringify(state.pending));else localStorage.removeItem(storageKey());}catch{state.storage=false;}}
-function render(){
-  $('connection').textContent=state.online?'Đã kết nối':'Mất kết nối';
-  $('session-label').textContent=state.session?'BUỔI #'+state.session:'CHỜ BUỔI HỌC';
-  let title,value,detail,status=state.message;
-  if(state.pending){title=state.pending.action==='login'?'ĐANG ĐĂNG NHẬP':'ĐANG GỬI ĐÁP ÁN';value=state.pending.student_id||state.pending.answer;detail='Chờ server xác nhận đã lưu.';if(!state.online)status='Đang thử lại, giữ trang này mở…';}
-  else if(state.mode==='FINISHED'){title='BUỔI HỌC KẾT THÚC';value=state.student||'Cảm ơn bạn';detail='Chờ giảng viên tạo buổi học mới.';}
-  else if(!state.student){title=state.mode==='LOGIN_OPEN'?'NHẬP MSSV':'CHỜ MỞ ĐĂNG NHẬP';value=state.mode==='LOGIN_OPEN'?(state.input||'_'):'Sẵn sàng';detail=state.mode==='LOGIN_OPEN'?'Nhấn CONFIRM để đăng nhập.':'Giảng viên sẽ mở đăng nhập trên website.';}
-  else if(state.question){title='CÂU HỎI '+state.question.question_no;value=state.question.accepted_answer||state.selected||'Chọn A / B / C / D';detail='1=A   2=B   3=C   4=D';if(state.question.accepted_answer)status='ĐÃ LƯU ✓ · Chờ câu tiếp theo';}
-  else{title='ĐĂNG NHẬP THÀNH CÔNG';value=state.student;detail='Chờ câu hỏi tiếp theo…';}
-  $('screen-title').textContent=title;$('screen-value').textContent=value;$('screen-detail').textContent=detail;$('screen-status').textContent=status;
-  const login=!state.student&&state.mode==='LOGIN_OPEN';
-  const choosing=!!state.student&&!!state.question&&!state.question.accepted_answer;
-  for(const key of keys){key.disabled=!!state.pending||!(login||(choosing&&'1234'.includes(key.dataset.key)));key.classList.toggle('selected',choosing&&state.selected==='ABCD'[Number(key.dataset.key)-1]);}
-  $('confirm').disabled=!!state.pending||!(login&&state.input||choosing&&state.selected);
-  $('clear').disabled=!login||!!state.pending||!state.input;
+const S = {uid:'', csrf:'', online:false, offlineSince:0, data:null, mode:'wifi', pending:null, busy:false,
+  roomOk:false, roomSession:null, room:'', selected:'', name:'', lastQuestion:null, selfDone:null, deadline:0, pollAt:0};
+// A page kept from before a deploy (Apache sends no cache headers): reload it once, with a fresh URL, when the server runs another version.
+const WEB_VERSION = '20261013-2';
+function freshPage(serverVersion) {
+  if (!serverVersion || serverVersion === WEB_VERSION) return false;
+  try { if (sessionStorage.getItem('clicker-reloaded') === serverVersion) return false; sessionStorage.setItem('clicker-reloaded', serverVersion); } catch { return false; }
+  const url = new URL(location.href); url.searchParams.set('r', serverVersion); location.replace(url); return true;
 }
-async function request(payload){
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
-  try{
-    const response=await fetch('phone-api.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':state.csrf},body:JSON.stringify(payload),signal:controller.signal});
-    const result=await response.json();state.online=true;
-    if(!response.ok||!result.ok){const error=new Error(result.error||'Server chưa xử lý được.');error.permanent=response.status>=400&&response.status<500&&![408,429].includes(response.status);throw error;}
-    return result;
-  }catch(error){if(!error.permanent)state.online=false;throw error;}finally{clearTimeout(timeout);}
+const SCREENS = ['s-code', 's-info', 's-wait', 's-question', 's-done', 's-ble'];
+
+function show(id) {
+  for (const s of SCREENS) $(s).hidden = s !== id;
+  document.body.classList.toggle('waiting', id === 's-wait');
 }
-function applyPoll(data){
-  const changed=data.session_id!==state.session;
-  if(changed){state.input='';state.selected='';state.message='';}
-  if(data.question?.question_id!==state.question?.question_id){state.selected='';if(!changed)state.message='';}
-  state.session=data.session_id;state.mode=data.state;state.student=data.student_id||'';state.question=data.question;
+function toast(text, ok = false) {
+  const t = $('toast'); t.textContent = text; t.className = 'toast' + (ok ? ' ok' : ''); t.hidden = !text;
+  clearTimeout(toast.timer); if (text) toast.timer = setTimeout(() => { t.hidden = true; }, ok ? 2200 : 4500);
 }
-async function tick(){
-  if(!state.uid||state.busy)return;state.busy=true;
-  try{
-    if(state.pending){
-      const packet=state.pending,result=await request(packet);
-      const matching=result.session_id===packet.session_id&&(packet.action==='login'?result.type==='LOGIN_OK'&&result.student_id===packet.student_id:result.type==='ANSWER_ACK'&&result.question_id===packet.question_id&&result.answer===packet.answer);
-      if(!matching)throw new Error('Xác nhận không khớp. Đang thử lại…');
-      state.message=packet.action==='login'?'Đăng nhập thành công.':'ĐÃ LƯU ✓';state.pending=null;savePending();
+function wait(title, sub) { $('wait-title').textContent = title; $('wait-sub').textContent = sub || ''; show('s-wait'); }
+
+/* ---------- server ---------- */
+const storageKey = () => 'clicker-pending-' + S.uid;
+function savePending() { try { if (S.pending) localStorage.setItem(storageKey(), JSON.stringify(S.pending)); else localStorage.removeItem(storageKey()); } catch {} }
+async function request(payload) {
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('phone-api.php', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':S.csrf}, body:JSON.stringify(S.room ? {...payload, room:S.room} : payload), signal:controller.signal});
+    const result = await response.json(); S.online = true;
+    if (!response.ok || !result.ok) {
+      const error = new Error(result.error || 'Server chưa xử lý được.'); error.code = result.code;
+      error.permanent = response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status); throw error;
     }
-    applyPoll(await request({action:'poll'}));
-  }catch(error){state.message=error.message;if(error.permanent){state.pending=null;savePending();}}
-  finally{state.busy=false;render();}
+    return result;
+  } catch (error) { if (!error.permanent) S.online = false; throw error; }
+  finally { clearTimeout(timeout); }
 }
-function digit(value){
-  if(state.pending)return;
-  if(!state.student&&state.mode==='LOGIN_OPEN'&&state.input.length<20){state.input+=value;state.message='';}
-  else if(state.student&&state.question&&!state.question.accepted_answer&&'1234'.includes(value)){state.selected='ABCD'[Number(value)-1];state.message='';}
-  render();
+
+/* ---------- room code ---------- */
+const params = new URLSearchParams(location.search);
+async function checkRoom(code) {
+  const d = await (await fetch('room.php?code=' + code, {credentials:'same-origin'})).json();
+  if (!d.ok) throw new Error(d.code === 'RATE_LIMIT' ? 'Bạn nhập sai nhiều lần, chờ một phút rồi thử lại.' : d.error || 'Mã phòng không đúng hoặc phòng chưa mở.');
+  S.roomOk = true; S.roomSession = null; S.room = code;   // sent with every request: the server finds this room by its code
+  try { sessionStorage.setItem('clicker-room', code); } catch {}
+  history.replaceState(null, '', 'phone.html?room=' + code);
 }
-function confirm(){
-  if(state.pending||$('confirm').disabled)return;
-  if(!state.student&&state.mode==='LOGIN_OPEN'&&state.input)state.pending={action:'login',session_id:state.session,student_id:state.input};
-  else if(state.question&&!state.question.accepted_answer&&state.selected)state.pending={action:'answer',session_id:state.session,question_id:state.question.question_id,answer:state.selected};
-  savePending();render();tick();
+$('code-input').addEventListener('input', e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = v.length > 3 ? v.slice(0, 3) + ' ' + v.slice(3) : v; });
+$('code-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const code = $('code-input').value.replace(/\D/g, '');
+  if (code.length !== 6) return toast('Mã phòng gồm 6 chữ số.');
+  try { await checkRoom(code); toast(''); await tick(); } catch (error) { toast(error.message); }
+});
+
+/* ---------- student info: MSSV, and the name when the MSSV is not on the list ---------- */
+$('info-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const id = $('info-id').value.trim(), name = $('info-name').value.trim();
+  if (!/^[0-9]{1,20}$/.test(id)) return toast('MSSV chỉ gồm chữ số.');
+  S.name = name;
+  S.pending = {action:'login', session_id:S.data.session_id, student_id:id}; savePending();
+  wait('Đang vào lớp…', 'MSSV ' + id); await tick();
+});
+async function register(id) {
+  if (!S.name) { show('s-info'); $('info-id').value = id; $('info-name').focus(); return toast('Bạn chưa có trong danh sách lớp. Điền họ và tên để xin vào lớp.'); }
+  try { await request({action:'register', session_id:S.data.session_id, student_id:id, student_name:S.name}); toast(''); }
+  catch (error) { toast(error.message); }
 }
-for(const key of keys)key.addEventListener('click',()=>digit(key.dataset.key));
-$('confirm').addEventListener('click',confirm);
-$('clear').addEventListener('click',()=>{state.input='';state.message='';render();});
-document.addEventListener('keydown',event=>{if(event.repeat)return;if(/^[0-9]$/.test(event.key)){event.preventDefault();digit(event.key);}else if(event.key==='Enter'){event.preventDefault();confirm();}else if(event.key==='Backspace'&&!state.student&&!state.pending){event.preventDefault();state.input=state.input.slice(0,-1);render();}});
-window.addEventListener('online',tick);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();});
-async function initialize(){
-  try{
-    const response=await fetch('phone-api.php');const identity=await response.json();
-    if(!response.ok||!identity.ok)throw new Error('Không cấp được mã thiết bị.');
-    state.uid=identity.device_uid;state.csrf=identity.csrf;$('device-uid').textContent=state.uid;
-    try{state.pending=JSON.parse(localStorage.getItem(storageKey())||'null');}catch{state.pending=null;}
+
+/* ---------- answering ---------- */
+for (const b of document.querySelectorAll('[data-ans]')) b.addEventListener('click', () => { S.selected = b.dataset.ans; render(); });
+$('send').addEventListener('click', async () => {
+  const q = S.data?.question; if (!q || !S.selected) return;
+  S.pending = {action:'answer', session_id:S.data.session_id, question_id:q.question_id, answer:S.selected}; savePending();
+  render(); await tick();
+});
+
+/* ---------- main loop ---------- */
+async function tick() {
+  if (!S.uid || S.busy) return; S.busy = true;
+  try {
+    if (S.mode === 'ble') { await Tag.sync(); return; }
+    if (S.pending) {
+      const packet = S.pending;
+      try {
+        const r = await request(packet);
+        const match = r.session_id === packet.session_id && (packet.action === 'login' ? r.type === 'LOGIN_OK' && r.student_id === packet.student_id
+          : r.type === 'ANSWER_ACK' && r.question_id === packet.question_id && r.answer === packet.answer);
+        if (!match) throw new Error('Xác nhận không khớp. Đang thử lại…');
+        S.pending = null; savePending();
+        if (packet.action === 'answer') toast('✓ Đã gửi ' + packet.answer, true);
+      } catch (error) {
+        if (!error.permanent) throw error;
+        S.pending = null; savePending();
+        if (error.code === 'STUDENT_NOT_FOUND' && packet.action === 'login') await register(packet.student_id);
+        else toast(error.message);
+      }
+    }
+    S.data = await request({action:'poll'}); S.mode = S.data.mode === 'ble' ? 'ble' : 'wifi'; S.pollAt = Date.now();   // the room's own mode
+    if (S.data.self_done) S.selfDone = S.data.self_done;   // kept to show the score after the room ends
+    if (S.roomOk && S.roomSession === null) S.roomSession = S.data.session_id;
+  } catch (error) {
+    if (error.code === 'MODE_BLE') S.mode = 'ble';
+    else if (error.permanent) toast(error.message);
+  } finally { S.busy = false; render(); }
+}
+
+function render() {
+  // network screen after 2 s without the server (and before the first answer)
+  if (S.online) S.offlineSince = 0; else if (!S.offlineSince) S.offlineSince = Date.now();
+  $('net-wait-text').textContent = S.uid ? 'Mạng chậm, đang kết nối lại…' : 'Đang kết nối…';
+  $('net-wait').classList.toggle('on', !S.uid || (!S.online && Date.now() - S.offlineSince > 2000));
+  if (S.mode === 'ble') { $('who').hidden = true; show('s-ble'); Tag.start(); return; }
+  Tag.stop();
+  const d = S.data; if (!d) return;
+  $('who').hidden = !d.student_id; $('who').textContent = d.student_id ? (d.student_name || 'MSSV ' + d.student_id) : '';
+  if (d.student_id) S.joined = d.session_id || S.joined;
+  if (!d.student_id && S.joined && (!d.session_id || d.session_id === S.joined)) return done();
+  if (d.student_id) {   // in the room: no room code needed again on this device
+    if (d.state === 'FINISHED' || !d.session_id) return done();
+    const q = d.question;
+    if (!q && d.pacing === 'self' && d.state === 'QUESTION_ACTIVE') return done();
+    if (S.pending?.action === 'answer') return wait('Đang gửi đáp án ' + S.pending.answer + '…', 'Giữ trang này mở.');
+    if (q && !q.accepted_answer) {
+      if (S.lastQuestion !== q.question_id) { S.lastQuestion = q.question_id; S.selected = ''; S.maxLeft = 0; }
+      $('q-no').textContent = q.total ? `Câu ${q.index}/${q.total}` : 'Câu ' + q.question_no;
+      $('q-text').textContent = q.text || '';
+      for (const b of document.querySelectorAll('[data-ans]')) {
+        b.setAttribute('aria-checked', String(b.dataset.ans === S.selected));
+        b.querySelector('span').textContent = q.choices ? q.choices[b.dataset.ans] : '';
+      }
+      // self-paced: seconds left for this question (server time, counted down locally between polls)
+      const timed = q.remaining !== undefined;
+      $('q-timer').hidden = $('q-left').hidden = !timed; if (!timed) $('q-quiz').hidden = true;
+      if (timed) {
+        const left = Math.max(0, q.remaining - (Date.now() - S.pollAt) / 1000), total = Number(S.data.seconds) || S.maxLeft || left;
+        S.maxLeft = Math.max(S.maxLeft || 0, q.remaining);
+        $('q-left').textContent = Math.ceil(left) + ' giây';
+        $('q-left').classList.toggle('warn', left <= 5); $('q-timer').classList.toggle('warn', left <= 5);
+        const quiz = q.quiz_left !== undefined ? Math.max(0, q.quiz_left - (Date.now() - S.pollAt) / 1000) : null;
+        $('q-quiz').hidden = quiz === null;
+        if (quiz !== null) $('q-quiz').textContent = `Còn ${Math.floor(quiz / 60)}:${String(Math.floor(quiz % 60)).padStart(2, '0')} cho cả bài`;
+        $('q-timer').firstElementChild.style.transform = `scaleX(${total ? Math.min(1, left / total) : 0})`;
+      }
+      document.querySelector('.answers').classList.toggle('picked', !!S.selected);
+      $('send').disabled = !S.selected; $('send').textContent = S.selected ? 'Gửi đáp án ' + S.selected : 'Gửi đáp án';
+      return show('s-question');
+    }
+    if (q) return wait('Đã gửi đáp án ' + q.accepted_answer + ' ✓', 'Chờ câu hỏi tiếp theo…');   // teacher-paced only
+    return wait('Đã vào lớp', 'Chờ giảng viên bắt đầu câu hỏi…');
+  }
+  // not in the room yet
+  if (!S.roomOk) { show('s-code'); return; }
+  if (S.roomSession !== null && d.session_id !== S.roomSession) { S.roomOk = false; toast('Phòng đã đổi. Hãy nhập mã phòng mới.'); return show('s-code'); }
+  if (d.state === 'FINISHED') return done();
+  if (!d.session_id) return wait('Chờ giảng viên mở phòng', 'Phòng chưa sẵn sàng.');
+  if (S.pending?.action === 'login') return wait('Đang vào lớp…', 'MSSV ' + S.pending.student_id);
+  if (d.join_pending) return wait('Đợi giảng viên duyệt', `${d.join_pending.student_name} · MSSV ${d.join_pending.student_id} · lớp ${d.class_id}`);
+  if (d.state !== 'LOGIN_OPEN') return wait('Chờ giảng viên mở đăng nhập', d.state === 'CREATED' ? 'Phòng đã tạo, sắp mở đăng nhập.' : 'Buổi học đang diễn ra, đăng nhập đã đóng. Hãy báo giảng viên.');
+  $('info-class').textContent = 'Lớp ' + d.class_id; $('info-class-input').value = d.class_id;
+  show('s-info');
+}
+
+function done() {
+  const r = S.selfDone;
+  $('done-title').textContent = r ? (S.data?.state === 'FINISHED' || !S.data?.session_id ? 'Bài kiểm tra đã kết thúc' : 'Bạn đã làm xong') : 'Buổi học đã kết thúc';
+  $('done-score').hidden = !r;
+  if (r) $('done-score').textContent = `${String(r.score10).replace('.', ',')}/10 điểm`;
+  $('done-sub').textContent = r ? `Đúng ${r.correct}/${r.total} câu · đã trả lời ${r.answered}/${r.total}. Câu chưa trả lời tính 0 điểm.` : 'Cảm ơn bạn đã tham gia. Giảng viên sẽ thông báo kết quả.';
+  show('s-done');
+}
+
+/* ---------- BLE: a Student Tag of this browser's own (server id NRF-SIM-…), screen rules of
+   firmware/StudentTagNRF52/tag_controller.h: Lo → MSSV → OK → Hi → question number → 1–4 → OK → A= ---------- */
+const Tag = (() => {
+  const SEG = {'0':0x3F,'O':0x3F,'1':0x06,'2':0x5B,'3':0x4F,'4':0x66,'5':0x6D,'S':0x6D,'6':0x7D,'7':0x07,'8':0x7F,'9':0x6F,'A':0x77,'b':0x7C,'B':0x7C,
+    'C':0x39,'d':0x5E,'D':0x5E,'E':0x79,'F':0x71,'H':0x76,'i':0x04,'L':0x38,'n':0x54,'o':0x5C,'r':0x50,'-':0x40,'=':0x48};
+  const ERR = {LOGIN_CLOSED:1, STUDENT_NOT_FOUND:2, STUDENT_IN_USE:3, DEVICE_IN_USE:4, LOGIN_REQUIRED:5, QUESTION_CLOSED:6, ANSWER_LOCKED:7};
+  // segment polygons a..g for one digit in a 50x80 box
+  const P = [[8,4,42,4,38,10,12,10],[43,6,46,10,45,36,40,38,39,12],[45,42,40,44,39,68,43,72,46,70],[8,76,42,76,38,70,12,70],
+    [5,42,10,44,11,68,7,72,4,70],[7,6,11,12,10,36,5,38,4,10],[9,40,13,37,37,37,41,40,37,43,13,43]];
+  const led = $('led');
+  led.innerHTML = [0, 1].map(d => P.map((p, i) => `<polygon class="seg" data-d="${d}" data-s="${i}" points="${p.map((v, j) => j % 2 ? v : v + 8 + d * 58).join(' ')}"/>`).join('')).join('');
+  const segs = [...led.querySelectorAll('.seg')];
+  const t = {data:null, input:'', selected:'', pending:null, notice:'', noticeAt:0, question:0, off:false};
+  let timer = null;
+
+  function view(now = Date.now()) {   // [two characters, blink, status line]
+    const d = t.data, q = d?.question, logged = !!d?.student_id;
+    if (t.notice && now - t.noticeAt < 1500) return [t.notice, false, t.notice === 'Hi' ? 'Đã vào lớp' : 'Lỗi ' + t.notice];
+    if (t.pending?.action === 'login') return [t.input.slice(-2).padStart(2, ' '), true, 'Đang gửi MSSV…'];
+    if (t.pending) return [' ' + t.pending.answer, true, 'Đang gửi đáp án…'];
+    if (t.off) return ['OF', false, 'Quản trị viên đã tắt tag mô phỏng.'];
+    if (!d) return ['--', false, 'Đang kết nối…'];
+    if (!S.online) return ['nS', false, 'Mất kết nối máy chủ'];
+    if (d.state === 'FINISHED') return ['En', false, 'Kết thúc'];
+    if (!d.session_id || d.state === 'WAIT_SESSION' || d.state === 'CREATED') return ['--', false, 'Chờ giảng viên mở phòng'];
+    if (!logged) return d.state !== 'LOGIN_OPEN' ? ['LC', false, 'Đăng nhập đã đóng']
+      : [t.input ? t.input.slice(-2).padStart(2, ' ') : 'Lo', false, 'Nhập MSSV bằng phím số rồi bấm OK'];
+    if (d.state !== 'QUESTION_ACTIVE' || !q) return ['rd', false, 'Chờ câu hỏi'];
+    if (q.accepted_answer) return [q.accepted_answer + '=', false, 'Đã gửi đáp án'];
+    if (t.selected) return [' ' + t.selected, false, 'Bấm OK để gửi'];
+    const n = q.question_no % 100;
+    return [(n < 10 ? ' ' : String(Math.floor(n / 10))) + n % 10, false, `Câu ${q.question_no}: chọn 1–4 (= A–D)`];
+  }
+  function draw() {
+    const [text, blink, status] = view();
+    for (const sg of segs) sg.classList.toggle('on', !!((SEG[text[+sg.dataset.d]] || 0) >> +sg.dataset.s & 1));
+    led.parentElement.classList.toggle('blink', blink);
+    $('tag-status').textContent = status;
+    const d = t.data;
+    $('tag-who').hidden = !d?.student_id; $('tag-who').textContent = d?.student_id ? `${d.student_name || ''} · MSSV ${d.student_id}` : '';
+  }
+  const buzz = n => { const el = $('tag-dev'); el.classList.remove('buzz'); void el.offsetWidth; el.style.animationIterationCount = n * 4; el.classList.add('buzz'); navigator.vibrate?.(Array(n).fill(120).flatMap(x => [x, 80])); };
+  const notice = text => { t.notice = text; t.noticeAt = Date.now(); };
+
+  // One round with the server, called by tick(): the waiting request first (kept until answered, like the board), then the state.
+  async function sync() {
+    if (t.pending) {
+      const packet = t.pending;
+      try {
+        await request(packet);
+        t.pending = null;
+        if (packet.action === 'login') { t.input = ''; notice('Hi'); buzz(1); }
+      } catch (error) {
+        if (!error.permanent) throw error;
+        t.pending = null; t.selected = '';
+        if (error.code === 'MODE_WIFI') { S.mode = 'wifi'; return; }
+        if (error.code === 'SIM_OFF') t.off = true; else notice('E' + (ERR[error.code] || 8));
+      }
+    }
+    try { t.data = await request({action:'poll', as_tag:true}); t.off = false; if (t.data.mode === 'wifi') { S.mode = 'wifi'; return; } }
+    catch (error) {
+      if (error.code === 'MODE_WIFI') { S.mode = 'wifi'; return; }
+      if (error.code === 'SIM_OFF') { t.off = true; return; }
+      throw error;
+    }
+    const q = t.data.question?.question_id || 0;
+    if (q !== t.question) { if (q && t.data.student_id) buzz(3); t.question = q; t.selected = ''; }   // new question: three buzzes
+  }
+  function press(k) {
+    const d = t.data, q = d?.question;
+    if (t.pending || t.off || !d) return;
+    const login = !d.student_id && d.state === 'LOGIN_OPEN', answer = !!d.student_id && d.state === 'QUESTION_ACTIVE' && q && !q.accepted_answer;
+    if (k === 'B') { if (login) t.input = t.input.slice(0, -1); else if (answer) t.selected = ''; }
+    else if (k === 'C') {
+      if (login && t.input) t.pending = {action:'login', session_id:d.session_id, student_id:t.input, as_tag:true};
+      else if (answer && t.selected) t.pending = {action:'answer', session_id:d.session_id, question_id:q.question_id, answer:t.selected, as_tag:true};
+      if (t.pending) { buzz(1); tick(); }
+    }
+    else if (login && t.input.length < 20) t.input += k;
+    else if (answer && '1234'.includes(k)) t.selected = 'ABCD'[+k - 1];
+    draw();
+  }
+  for (const b of document.querySelectorAll('[data-k]')) b.addEventListener('click', () => press(b.dataset.k));
+  document.addEventListener('keydown', e => {
+    if ($('s-ble').hidden || e.repeat) return;
+    const k = /^[0-9]$/.test(e.key) ? e.key : e.key === 'Enter' ? 'C' : e.key === 'Backspace' ? 'B' : null;
+    if (!k) return; e.preventDefault();
+    const b = document.querySelector(`[data-k="${k}"]`); b.classList.add('press'); setTimeout(() => b.classList.remove('press'), 120); press(k);
+  });
+  return {
+    sync,
+    start() { if (!timer) { draw(); timer = setInterval(draw, 250); } },
+    stop() { clearInterval(timer); timer = null; },
+  };
+})();
+
+/* ---------- start ---------- */
+async function initialize() {
+  try {
+    const response = await fetch('phone-api.php', {cache:'no-store'}); const identity = await response.json();
+    if (freshPage(identity.web)) return;
+    if (!response.ok || !identity.ok) throw new Error('Không cấp được mã thiết bị.');
+    S.uid = identity.device_uid; S.csrf = identity.csrf;
+    try { S.pending = JSON.parse(localStorage.getItem(storageKey()) || 'null'); } catch { S.pending = null; }
+    const code = (params.get('room') || (() => { try { return sessionStorage.getItem('clicker-room'); } catch { return ''; } })() || '').replace(/\D/g, '');
+    if (code.length === 6) { try { await checkRoom(code); } catch (error) { toast(error.message); } }
     await tick();
-  }catch(error){state.message=error.message;render();setTimeout(initialize,2000);}
+  } catch (error) { render(); setTimeout(initialize, 2000); }
 }
-render();initialize();setInterval(tick,1000);
+window.addEventListener('online', tick);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+render(); initialize(); setInterval(tick, 1000);
+setInterval(() => { if (!$('s-question').hidden && !$('q-timer').hidden) render(); }, 250);

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Smart Classroom Clicker database backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=clicker-backup.service
+
+[Install]
+WantedBy=timers.target

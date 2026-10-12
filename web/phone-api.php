@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
-// Browser identity uses a signed HttpOnly cookie; the ESP32 device key stays on the server.
+// Student page (phones, laptops, the simulated Student Tag): identity is a signed HttpOnly cookie, then the shared
+// device rules of api.php (CLICKER_PHONE_UID).
 require_once __DIR__ . '/lib.php';
 $config = require (getenv('CLICKER_CONFIG') ?: '/home/pham-van-de/Desktop/IOT/clicker/.local/prod-config.php');
 header('Content-Type: application/json; charset=utf-8');
@@ -21,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         'expires' => time() + 2592000, 'path' => '/clicker/', 'httponly' => true, 'samesite' => 'Strict',
         'secure' => secure_request($config),
     ]);
-    echo json_encode(['ok' => true, 'device_uid' => $uid, 'csrf' => hash_hmac('sha256', 'csrf:' . $uid, $signingKey)]);
+    echo json_encode(['ok' => true, 'device_uid' => $uid, 'csrf' => hash_hmac('sha256', 'csrf:' . $uid, $signingKey), 'web' => WEB_VERSION]);
     exit;
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$valid || !hash_equals(hash_hmac('sha256', 'csrf:' . $uid, $signingKey), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
@@ -29,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$valid || !hash_equals(hash_hmac('
 }
 $raw = file_get_contents('php://input', false, null, 0, 1048577);
 $data = json_decode($raw, true);
-if (strlen($raw) > 1048576 || !is_array($data) || !in_array($data['action'] ?? '', ['poll', 'login', 'answer'], true)) {
+if (strlen($raw) > 1048576 || !is_array($data) || !in_array($data['action'] ?? '', ['poll', 'login', 'answer', 'register'], true)) {
     http_response_code(400); echo json_encode(['ok' => false, 'code' => 'ACTION', 'error' => 'Lệnh thiết bị không hợp lệ.']); exit;
 }
 define('CLICKER_PHONE_UID', $uid);

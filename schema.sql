@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS teacher_account (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(80) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    -- Google/Facebook sign-in (tools/upgrade_oauth.php). Social-only accounts get an unusable random password hash.
+    email VARCHAR(190) NULL,
+    google_id VARCHAR(64) NULL UNIQUE,
+    facebook_id VARCHAR(64) NULL UNIQUE,
+    -- Admin page (tools/upgrade_admin.php): role, locked accounts, online dot.
+    is_admin TINYINT(1) NOT NULL DEFAULT 0,
+    disabled_at DATETIME NULL,
+    last_seen DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
@@ -54,7 +62,8 @@ CREATE TABLE IF NOT EXISTS device (
     kind ENUM('esp','bridge') NULL,
     key_hash CHAR(64) NULL UNIQUE,
     revoked_at DATETIME NULL,
-    registered_at DATETIME NULL
+    registered_at DATETIME NULL,
+    label VARCHAR(60) NULL
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS request_limit (
     bucket VARCHAR(32) NOT NULL,
@@ -66,6 +75,8 @@ CREATE TABLE IF NOT EXISTS request_limit (
 ) ENGINE=InnoDB;
 
 -- 3 Rooms. A room holds its state flags; last_activity is the last teacher command (idle rooms end by themselves).
+-- Every room not FINISHED is running: several teachers can run one each at the same time, each in its own mode
+-- (wifi = phones / laptops with the room code, ble = Student Tags through that teacher's USB gateway).
 CREATE TABLE IF NOT EXISTS classroom_session (
     id INT AUTO_INCREMENT PRIMARY KEY,
     teacher_id INT NOT NULL,
@@ -76,12 +87,15 @@ CREATE TABLE IF NOT EXISTS classroom_session (
     current_question_id INT NULL,
     auto_mode TINYINT(1) NOT NULL DEFAULT 0,
     auto_seconds SMALLINT UNSIGNED NOT NULL DEFAULT 30 CHECK(auto_seconds BETWEEN 1 AND 3600),
+    pacing ENUM('teacher','self') NOT NULL DEFAULT 'teacher',
+    mode ENUM('wifi','ble') NOT NULL DEFAULT 'wifi',
     auto_deadline DATETIME(3) NULL,
     last_activity DATETIME(3) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(teacher_id) REFERENCES teacher_account(id),
     FOREIGN KEY(exam_id, teacher_id) REFERENCES exam(id, teacher_id),
-    FOREIGN KEY(current_question_id) REFERENCES question(id)
+    FOREIGN KEY(current_question_id) REFERENCES question(id),
+    INDEX session_state (state)
 ) ENGINE=InnoDB;
 -- The class list copied when the room is created, plus the device each student logged in with
 -- (NULL = not logged in; one device per student and one student per device in a room).
@@ -129,3 +143,67 @@ CREATE TABLE IF NOT EXISTS app_state (
     FOREIGN KEY(session_id) REFERENCES classroom_session(id)
 ) ENGINE=InnoDB;
 INSERT IGNORE INTO app_state(id, session_id) VALUES(1, NULL);
+
+-- Students who typed an unknown MSSV on the phone page and asked to join the room; the teacher approves (✓) or
+-- rejects (✗). One request per phone and per MSSV in a room. Approving moves the row into student + session_student.
+CREATE TABLE IF NOT EXISTS join_request (
+    session_id INT NOT NULL,
+    device_uid VARCHAR(64) NOT NULL,
+    student_id VARCHAR(20) NOT NULL,
+    student_name VARCHAR(120) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY(session_id, device_uid),
+    UNIQUE KEY join_student (session_id, student_id),
+    FOREIGN KEY(session_id) REFERENCES classroom_session(id),
+    FOREIGN KEY(device_uid) REFERENCES device(device_uid)
+) ENGINE=InnoDB;
+
+-- Admin tools (03/10/2026): feature switches, activity log, forgotten-password requests, device names.
+CREATE TABLE IF NOT EXISTS app_setting (
+    name VARCHAR(40) PRIMARY KEY,
+    value VARCHAR(255) NOT NULL
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    actor_id INT NULL,
+    actor_name VARCHAR(120) NULL,
+    action VARCHAR(40) NOT NULL,
+    detail VARCHAR(500) NOT NULL DEFAULT '',
+    ip VARCHAR(64) NOT NULL DEFAULT '',
+    KEY(at), KEY(actor_id)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS password_request (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    teacher_id INT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip VARCHAR(64) NOT NULL DEFAULT '',
+    handled_at DATETIME NULL,
+    KEY(teacher_id),
+    FOREIGN KEY(teacher_id) REFERENCES teacher_account(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Teacher profile (filled after sign-up, also for Google accounts) and classes created without a student file.
+CREATE TABLE IF NOT EXISTS teacher_profile (
+    teacher_id INT PRIMARY KEY,
+    full_name VARCHAR(120) NOT NULL,
+    gender ENUM('nam','nu','khac') NOT NULL DEFAULT 'khac',
+    school VARCHAR(160) NOT NULL DEFAULT '',
+    subject VARCHAR(120) NOT NULL DEFAULT '',
+    grades VARCHAR(120) NOT NULL DEFAULT '',
+    phone VARCHAR(20) NOT NULL DEFAULT '',
+    bio VARCHAR(300) NOT NULL DEFAULT '',
+    avatar MEDIUMBLOB NULL,
+    avatar_type VARCHAR(20) NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY(teacher_id) REFERENCES teacher_account(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+-- A class that exists before any student: students join with the room code and give their name + MSSV,
+-- the teacher approves them, and the list is numbered by MSSV.
+CREATE TABLE IF NOT EXISTS teacher_class (
+    teacher_id INT NOT NULL,
+    class_id VARCHAR(60) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(teacher_id, class_id),
+    FOREIGN KEY(teacher_id) REFERENCES teacher_account(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

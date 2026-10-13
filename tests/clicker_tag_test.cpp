@@ -1,5 +1,5 @@
 // g++ -std=c++11 -Wall -Wextra -Werror tests/clicker_tag_test.cpp -o /tmp/clicker-tag-test && /tmp/clicker-tag-test
-#include "../firmware/ClickerTag/ClickerTag.ino"   // ARDUINO undefined: the plain C++ part only
+#include "../firmware/ClickerTag/tag_logic.h"
 #include <cassert>
 #include <cstdio>
 #include <iostream>
@@ -284,5 +284,23 @@ int main() {
     assert(oneDigit(Screen{'1', '2', false}, CHAR_MS + GAP_MS) == '2' && oneDigit(Screen{'1', '2', false}, 2 * CHAR_MS + GAP_MS) == ' ');
     assert(oneDigit(Screen{'1', '2', false}, 2 * (CHAR_MS + GAP_MS)) == '1' && 2 * (CHAR_MS + GAP_MS) == 1000);
     assert(oneDigit(Screen{' ', ' ', false}, 0) == ' ');
+    // Listening follows what the student can see: fast for an ACK, slower awake, slow asleep, slowest without a session.
+    {
+        const uint8_t addr[3] = {9, 9, 9};
+        Tag l; memcpy(l.addr, addr, 3); unsigned long t = 1000;
+        l.wake(t);
+        assert(l.scanInterval(t) == SCAN_AWAKE && l.helloPeriod() == HELLO_MS);
+        l.onDownlink(state(3, ble::LOGIN_OPEN), t);
+        l.press('1', t); l.press('C', t);
+        assert(l.pending && l.scanInterval(t) == SCAN_ACK && l.helloPeriod() == RETRY_MS);
+        l.onDownlink(reply(state(3, ble::QUESTION_ACTIVE, 5, 1), addr, ble::LOGIN_OK, 1, 0), t);
+        t += DISPLAY_SLEEP_MS + 1; l.onDownlink(state(3, ble::QUESTION_ACTIVE, 5, 1), t);
+        assert(l.screen(t).tens == ' ' && !l.awake && l.scanInterval(t) == SCAN_ASLEEP && l.helloPeriod() == HELLO_SLEEP_MS);
+        assert(l.scanInterval(t + GATEWAY_TIMEOUT_MS + 1) == SCAN_IDLE);    // gateway gone
+        l.onDownlink(state(3, ble::FINISHED), t); l.awake = false;
+        assert(l.scanInterval(t) == SCAN_IDLE);                             // no running session
+        static_assert(SCAN_ACK < SCAN_AWAKE && SCAN_AWAKE < SCAN_ASLEEP && SCAN_ASLEEP < SCAN_IDLE, "listen levels");
+        static_assert(SCAN_WINDOW > 48, "a 40 ms window must cover the gateway's 30 ms advert interval");
+    }
     std::cout << "ble_test: all checks passed\n";
 }

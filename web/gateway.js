@@ -54,7 +54,7 @@ const GatewayProtocol = (() => {
 class GatewayClient {
   static VENDOR = 0x239A;      // Adafruit nRF52 bootloader / core (SuperMini flashed as ItsyBitsy nRF52840)
   static TICK_MS = 120;        // one STATE frame; each carries 2 reply slots
-  static SYNC_MS = 1000;       // gateway_sync: room state + heartbeat of the tags heard
+  static SYNC_MS = 500;        // gateway_sync: room state + heartbeat of the tags heard
   static TAG_ONLINE_MS = 8000;
   static REPEATS = 10;         // adverts per reply; a tag that misses all of them simply sends again
 

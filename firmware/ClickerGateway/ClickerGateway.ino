@@ -13,12 +13,12 @@
 
 // ====================================================================================== Settings
 const unsigned long WEB_TIMEOUT_MS = 3000;
-const uint16_t ADV_INTERVAL = 160;                    // 100 ms, 0.625 ms units
+const uint16_t ADV_INTERVAL = 48;                     // 30 ms (0.625 ms units): a 40 ms tag listen window always catches one
 const uint16_t SCAN_INTERVAL = 160, SCAN_WINDOW = 160; // listen all the time (USB powered)
 const uint8_t MAX_TAGS = 64;                          // tags remembered for repeat filtering
 
 // ====================================================================================== BLE frames
-// Same layout as ClickerTag.ino; the gateway only checks frames, it never builds tag frames.
+// Same layout as ClickerTag/protocol.h; the gateway only checks frames, it never builds tag frames.
 namespace ble {
 
 const uint16_t COMPANY = 0xFFFF;

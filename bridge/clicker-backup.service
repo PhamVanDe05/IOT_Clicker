@@ -1,6 +1,0 @@
-[Unit]
-Description=Backup Smart Classroom Clicker database
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/php /home/pham-van-de/Desktop/IOT/clicker/tools/backup.php

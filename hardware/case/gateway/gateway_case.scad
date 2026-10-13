@@ -158,7 +158,7 @@ module top_half() {
         translate([lanyard[0], lanyard[1], -1]) cylinder(d = 3.2, h = H + 2);
         translate([lanyard[0], lanyard[1], H - 0.6]) cylinder(d1 = 3.2, d2 = 4.4, h = 0.61);
         logo(txt_d);
-        translate([13.5, 0, H - txt_d]) linear_extrude(txt_d + 0.01) text("CLICKER", size = 3.6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center", spacing = 1.15);
+        translate([12.0, 0, H - txt_d]) linear_extrude(txt_d + 0.01) text("CLICKER", size = 3.6, font = "DejaVu Sans:style=Bold", halign = "center", valign = "center", spacing = 1.0);   // 1.4 mm clear of the logo
     }
 }
 

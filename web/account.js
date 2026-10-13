@@ -33,7 +33,7 @@ const Account = (() => {
     $('acct-meta').textContent = me ? [me.subject, me.school].filter(Boolean).join(' · ') || T('Chưa ghi trường / môn') : '';
     $('acct-avatar').src = $('acct-avatar-big').src = $('pf-avatar').src = avatar();
     const hello = $('hero-hello');
-    if (hello && me) { hello.innerHTML = ''; hello.append(T('Chào') + ' ' + me.full_name.trim() + ','); hello.append(document.createElement('br')); const em = document.createElement('em'); em.textContent = T('kiểm tra thông minh, học vui hơn.'); hello.append(em); }
+    if (hello && me) { hello.innerHTML = ''; hello.append(T('Chào') + ' ' + me.full_name.trim() + ','); hello.append(document.createElement('br')); const em = document.createElement('em'); em.textContent = T('Student Tag, thiết bị kiểm tra thông minh cho môi trường học đường.'); hello.append(em); }
   }
 
   /* ---------- profile ---------- */

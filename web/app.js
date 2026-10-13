@@ -4,7 +4,7 @@ const stateNames = {CREATED:'Đã tạo', LOGIN_OPEN:'Đang mở đăng nhập',
 let csrf = '', sessionId = '', current = null, refreshing = false, privacy = true, analysisQuestionId = '', sortWrong = false, pendingDelete = null, students = [];
 const revealed = new Set(), shownColumns = new Set();
 // Live tab: results shown on the projected question; switched off whenever another question is shown.
-let resultsOn = false, resultsFor = '';
+let resultsOn = false, resultsFor = '', revealFresh = false, revealUntil = 0;
 // Wi-Fi / BLE belongs to the teacher's room; with no running room the page keeps the last choice and sends it with
 // create_session, so the next room starts in it.
 let mode = (() => { try { return localStorage.getItem('clicker-mode') === 'ble' ? 'ble' : 'wifi'; } catch { return 'wifi'; } })(), onlineUids = [];
@@ -61,7 +61,7 @@ function leaveGuard(event) { if (mode === 'ble') event.preventDefault(); }
 // One menu item can hold several steps: "Chuẩn bị" = #classes → #prepare → #room, with the step bar on top.
 // #setup opens the step used last (or the first one still empty).
 // A page kept from before a deploy (Apache sends no cache headers): reload it once, with a fresh URL, when the server runs another version.
-const WEB_VERSION = '20261013-2';
+const WEB_VERSION = '20261013-13';
 function freshPage(serverVersion) {
   if (!serverVersion || serverVersion === WEB_VERSION) return false;
   try { if (sessionStorage.getItem('clicker-reloaded') === serverVersion) return false; sessionStorage.setItem('clicker-reloaded', serverVersion); } catch { return false; }
@@ -315,20 +315,34 @@ function drawQuestion(area, question, showAnswer) {
   }
 }
 // Bars behind each choice (share of answers), the key marked, and a summary line: the class result for the projector.
-function drawResults(area, question, stats, rosterSize) {
+// animate = the moment Hiện kết quả was pressed: bars grow one after another, the numbers count up, then the wrong answers
+// dim and the right one pops (CSS .reveal-in). Redraws every second show the final state without replaying it.
+function drawResults(area, question, stats, rosterSize, animate = false) {
   const answered = stats?.answered || 0, dist = stats?.distribution || {};
-  for (const option of area.querySelectorAll('.option')) {
+  area.classList.toggle('reveal-in', animate);
+  [...area.querySelectorAll('.option')].forEach((option, i) => {
     const letter = option.querySelector('.option-letter').textContent, count = Number(dist[letter] || 0);
     const pct = answered ? Math.round(count / answered * 100) : 0;
     option.classList.add('with-result'); option.classList.toggle('correct', question.correct_answer === letter);
-    option.style.setProperty('--pct', pct + '%');
-    const result = document.createElement('span'); result.className = 'opt-result'; result.textContent = `${count} · ${pct}%`;
+    option.style.setProperty('--pct', pct + '%'); option.style.setProperty('--i', i);
+    const result = document.createElement('span'); result.className = 'opt-result';
+    result.textContent = animate ? '0 · 0%' : `${count} · ${pct}%`;
     option.append(result);
-  }
+    if (animate) countUp(result, count, pct, 260 + i * 120);
+  });
   const accuracy = answered ? Math.round((stats?.correct || 0) / answered * 100) : 0;
   const summary = document.createElement('p'); summary.className = 'result-summary';
   summary.textContent = `${accuracy}% đúng · ${answered}/${rosterSize} đã trả lời`;
   area.querySelector('h3').after(summary);
+}
+function countUp(el, count, pct, delay) {
+  const t0 = performance.now() + delay, ms = 900;
+  const step = now => {
+    if (now < t0) { requestAnimationFrame(step); return; }
+    const k = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = `${Math.round(count * e)} · ${Math.round(pct * e)}%`; if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 // "Sinh viên tự làm" rooms: no single open question, so the Live card shows each student's progress instead,
 // and the side panel shows the class totals and the share of right answers per question.
@@ -383,14 +397,11 @@ function drawSelf(data, lock, active, finished) {
   $('response-progress').style.width = pct + '%'; $('response-caption').textContent = `${pct}% số câu của cả lớp đã trả lời`;
   $('dist-title').textContent = 'Tỷ lệ đúng từng câu';
   const keys = new Map(data.report.questions.map(q => [`Q${q.question_no}`, q.correct_answer]));
-  $('distribution').replaceChildren(...[...keys.keys()].map(q => {
+  $('distribution').replaceChildren(columnChart('done' + data.session.id, [...keys.keys()].map(q => {
     const given = data.report.rows.map(r => r.answers[q]).filter(Boolean), right = given.filter(a => a === keys.get(q)).length;
-    const row = document.createElement('div'); row.className = 'answer-bar';
-    const n = document.createElement('span'); n.textContent = q;
-    const tr = document.createElement('div'); const f = document.createElement('i'); f.style.width = (given.length ? right / given.length * 100 : 0) + '%'; tr.append(f);
-    const v = document.createElement('strong'); v.textContent = given.length ? `${Math.round(right / given.length * 100)}%` : '—';
-    row.append(n, tr, v); return row;
-  }));
+    const pctRight = given.length ? Math.round(right / given.length * 100) : 0;
+    return {label: q, value: pctRight, text: given.length ? pctRight + '%' : '—', bad: given.length > 0 && pctRight < 50};
+  })));
 }
 function statBox(name, value) {
   const box = document.createElement('div'); box.className = 'stat';
@@ -398,14 +409,37 @@ function statBox(name, value) {
   const number = document.createElement('strong'); number.textContent = value;
   box.append(label, number); return box;
 }
-function distributionRows(distribution, answered) {
-  return Object.entries(distribution).map(([letter, count]) => {
-    const row = document.createElement('div'); row.className = 'answer-bar';
-    const name = document.createElement('span'); name.textContent = letter;
-    const track = document.createElement('div'); const fill = document.createElement('i'); fill.style.width = (answered ? count / answered * 100 : 0) + '%'; track.append(fill);
-    const total = document.createElement('strong'); total.textContent = count;
-    row.append(name, track, total); return row;
-  });
+// Column chart like the one on the landing page: green columns growing from the baseline, red for the weak or wrong ones,
+// labels underneath. items: [{label, value (0-100 height %), text (shown above), bad}]. The first drawing of a chart
+// grows the columns; redraws of the same chart (the page refreshes every second) only move them.
+const drawnCharts = new Set();
+function columnChart(id, items, height = 150) {
+  const sig = id + '|' + items.map(item => item.label).join(',');
+  const animate = !drawnCharts.has(sig); drawnCharts.add(sig);
+  const chart = document.createElement('div'); chart.className = 'col-chart'; chart.style.setProperty('--cc-h', height + 'px');
+  const bars = document.createElement('div'); bars.className = 'cc-bars';
+  const labels = document.createElement('div'); labels.className = 'cc-lab';
+  const grow = [];
+  for (const item of items) {
+    const col = document.createElement('div'); col.className = 'cc-col';
+    const text = document.createElement('b'); text.textContent = item.text;
+    const bar = document.createElement('i'); bar.className = item.bad ? 'lo' : '';
+    const pct = Math.max(0, Math.min(100, item.value));
+    const target = `calc((100% - 22px) * ${pct / 100})`;
+    bar.style.height = animate ? '0' : target; if (animate) grow.push(() => { bar.style.height = target; });
+    col.append(text, bar); bars.append(col);
+    const name = document.createElement('span'); name.textContent = item.label; labels.append(name);
+  }
+  chart.append(bars, labels);
+  if (grow.length) requestAnimationFrame(() => requestAnimationFrame(() => grow.forEach(run => run())));
+  return chart;
+}
+// Answer choices A–D of one question: the tallest column is the most chosen answer, count and share on top. With `key` (the answer is
+// shown) the right one is green and the others red; without it every column is green so the key is not given away.
+function distributionChart(id, distribution, answered, key = '') {
+  const most = Math.max(0, ...Object.values(distribution).map(Number));   // the tallest column fills the chart
+  return columnChart(id, Object.entries(distribution).map(([letter, count]) => ({label: letter, value: most ? count / most * 100 : 0,
+    text: answered ? `${count} · ${Math.round(count / answered * 100)}%` : String(count), bad: !!key && letter !== key})), 150);
 }
 function tableRow(values, tag = 'td') {
   const row = document.createElement('tr');
@@ -456,7 +490,7 @@ function renderAnalysis(data) {
   summary.append(statBox('Answered', `${item.answered}/${data.roster.length}`), statBox('Waiting', item.waiting), statBox('Correct', item.correct), statBox('Wrong', item.wrong), statBox('Accuracy', `${item.accuracy}%`));
   area.append(summary);
   const heading = document.createElement('h4'); heading.textContent = 'Lựa chọn A/B/C/D'; area.append(heading);
-  const distribution = document.createElement('div'); distribution.className = 'distribution'; distribution.append(...distributionRows(item.distribution, item.answered)); area.append(distribution);
+  area.append(distributionChart('analysis' + question.id, item.distribution, item.answered, revealed.has(String(question.id)) ? question.correct_answer : ''));
 }
 function renderParticipants(roster) {
   const joined = roster.filter(student => student.device_uid).length;
@@ -526,7 +560,85 @@ function showRoomCode(code) {
   if ($('room-code').textContent !== text) $('room-code').textContent = text;
   const label = code ? `Mã phòng: ${text}` : '';
   if ($('projector-code').textContent !== label) $('projector-code').textContent = label;
+  if (!code) closeCodeStage(); else drawCodeStage(code);
 }
+// 🔍 on the code box: the code fills the screen for the TV (full screen, Clicker green, moving light). Click anywhere, the
+// Thu nhỏ button or Esc brings it back; it follows the room's code while open. Only the code: nothing else on the screen.
+function drawCodeStage(code) {
+  const stage = $('code-stage'), box = $('cs-code');
+  if (box.dataset.code !== code) {
+    box.dataset.code = code; box.replaceChildren();
+    [code.slice(0, 3), code.slice(3)].forEach((part, g) => {
+      const group = document.createElement('span'); group.className = 'cs-grp';
+      [...part].forEach((digit, i) => { const d = document.createElement('span'); d.className = 'cs-d'; d.textContent = digit; d.style.setProperty('--i', g * 3 + i); group.append(d); });
+      box.append(group);
+    });
+  }
+}
+// Lobby view of the same screen: QR to the join page (offline, drawn here), how many are in, and each student's name popping
+// in as they sign in. Privacy on = "#number" instead of the name, like the rest of the page. The QR shows in every room (a phone scanning it joins a BLE room as a simulated tag).
+let stageView = 'lobby'; try { stageView = localStorage.getItem('clicker-stage-view') === 'code' ? 'code' : 'lobby'; } catch { /* default */ }
+const lobby = {chips: new Map(), shown: 0};
+function setStageView(view) {
+  stageView = view; try { localStorage.setItem('clicker-stage-view', view); } catch { /* remembered only when allowed */ }
+  $('code-stage').classList.toggle('is-lobby', view === 'lobby');
+  $('cs-view').textContent = I18N_T(view === 'lobby' ? 'Chỉ hiện mã' : 'Phòng chờ');
+}
+function I18N_T(text) { return typeof I18N !== 'undefined' ? I18N.t(text) : text; }
+function drawQr(text) {
+  const svg = $('cs-qr');
+  if (typeof qrcode !== 'function') { $('cs-qr-tile').hidden = true; return; }
+  if (svg.dataset.text === text) return; svg.dataset.text = text;
+  const qr = qrcode(0, 'M'); qr.addData(text); qr.make();
+  const n = qr.getModuleCount(); let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  svg.setAttribute('viewBox', `-2 -2 ${n + 4} ${n + 4}`);
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', d); path.setAttribute('fill', '#0F2E3A');
+  svg.replaceChildren(path);
+}
+function tweenNumber(el, to, ms = 600) {
+  const from = Number(el.textContent) || 0; if (from === to) { el.textContent = to; return; }
+  const t0 = performance.now();
+  const step = now => { const k = Math.min(1, (now - t0) / ms); el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function updateLobby(data) {
+  if ($('code-stage').hidden || !data) return;
+  const roster = data.roster || [], joined = roster.filter(s => s.device_uid);
+  $('cs-qr-tile').hidden = typeof qrcode !== 'function'; $('cs-lobby').classList.toggle('no-qr', $('cs-qr-tile').hidden);
+  if (!$('cs-qr-tile').hidden && data.room_code) drawQr(`${$('phone-url').textContent}?room=${data.room_code}`);
+  tweenNumber($('cs-n'), joined.length); $('cs-of').textContent = '/' + roster.length;
+  const MAX = 48, label = s => privacy ? `#${s.student_no}` : String(s.student_name).split(/\s+/).slice(-2).join(' ');
+  for (const s of joined) {
+    let chip = lobby.chips.get(s.student_id);
+    if (!chip) {
+      if (lobby.chips.size >= MAX) continue;
+      chip = document.createElement('span'); chip.className = 'cs-chip'; chip.style.setProperty('--i', Math.min(lobby.shown++, 24));
+      lobby.chips.set(s.student_id, chip); $('cs-chips').append(chip);
+    }
+    const text = label(s); if (chip.textContent !== text) chip.textContent = text;
+  }
+  const more = joined.length - lobby.chips.size, tail = $('cs-chips').querySelector('.more');
+  if (more > 0) { const el = tail || Object.assign(document.createElement('span'), {className: 'cs-chip more'}); el.textContent = `+${more}`; $('cs-chips').append(el); } else tail?.remove();
+}
+function openCodeStage() {
+  const code = ($('room-code').textContent || '').replace(/\D/g, ''); if (code.length !== 6) return;
+  const stage = $('code-stage');
+  $('cs-code').dataset.code = ''; drawCodeStage(code);   // rebuild: the digits rise in again every time
+  lobby.chips.clear(); lobby.shown = 0; $('cs-chips').replaceChildren(); $('cs-n').textContent = '0'; setStageView(stageView);
+  stage.hidden = false; document.body.style.overflow = 'hidden'; updateLobby(current);
+  stage.requestFullscreen?.().catch(() => { /* the overlay already covers the page */ });
+}
+function closeCodeStage() {
+  const stage = $('code-stage'); if (stage.hidden) return;
+  stage.hidden = true; document.body.style.overflow = '';
+  if (document.fullscreenElement === stage) document.exitFullscreen().catch(() => {});
+}
+$('code-zoom').addEventListener('click', openCodeStage);
+$('cs-view').addEventListener('click', e => { e.stopPropagation(); setStageView(stageView === 'lobby' ? 'code' : 'lobby'); });
+$('code-stage').addEventListener('click', closeCodeStage);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCodeStage(); });
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) closeCodeStage(); });
 // Phone students asking to join (MSSV not on the list): ✓ adds them to the class and the room, ✗ drops the request.
 function renderJoins(rows) {
   rows = rows || [];
@@ -564,7 +676,7 @@ function render(data) {
   if (previous && previous.session.id !== data.session.id) { revealed.clear(); shownColumns.clear(); analysisQuestionId = ''; }
   const state = data.session.state, active = state === 'QUESTION_ACTIVE', finished = state === 'FINISHED';
   $('room-title').textContent = data.session.title || `Kiểm tra lớp ${data.session.class_id}`;
-  showRoomCode(data.room_code); renderJoins(data.join_requests);
+  showRoomCode(data.room_code); renderJoins(data.join_requests); updateLobby(data);
   $('room-badge').textContent = stateNames[state]; $('room-badge').className = 'state-badge ' + (state === 'LOGIN_OPEN' ? 'ready' : active ? 'active' : finished ? 'done' : '');
   $('session-status').textContent = `Session #${data.session.id} · ${data.session.class_id} · ${stateNames[state]} · AUTO ${data.session.auto_seconds} giây/câu`;
   selectOptions('question-select', data.questions, 'id', row => `Q${row.question_no}${row.closed_at ? ' · đã đóng' : ''}`, 'Chọn câu hỏi');
@@ -573,9 +685,13 @@ function render(data) {
   else if (newRoom) $('question-select').value = data.question?.id ?? data.questions[0]?.id ?? '';
   const chosen = data.questions.find(row => String(row.id) === $('question-select').value);
   const chosenStats = data.analysis.find(row => String(row.question_id) === String(chosen?.id));
-  drawQuestion($('question-display'), chosen, false);
-  if (String(chosen?.id ?? '') !== resultsFor) { resultsOn = false; resultsFor = String(chosen?.id ?? ''); }
-  if (resultsOn && chosen) drawResults($('question-display'), chosen, chosenStats, data.roster.length);
+  // While the reveal animation plays (about 2 s) the question is not redrawn, so the page's 1-second refresh cannot cut it short.
+  if (!(resultsOn && !revealFresh && Date.now() < revealUntil && String(chosen?.id ?? '') === resultsFor)) {
+    drawQuestion($('question-display'), chosen, false);
+    if (String(chosen?.id ?? '') !== resultsFor) { resultsOn = false; resultsFor = String(chosen?.id ?? ''); }
+    if (resultsOn && chosen) { drawResults($('question-display'), chosen, chosenStats, data.roster.length, revealFresh); if (revealFresh) revealUntil = Date.now() + 2300; }
+    revealFresh = false;
+  }
   fitProjector();
   $('show-results').textContent = resultsOn ? 'Ẩn kết quả' : 'Hiện kết quả'; $('show-results').setAttribute('aria-pressed', String(resultsOn));
   $('show-results').disabled = !chosen; $('edit-question').disabled = !chosen;
@@ -586,7 +702,7 @@ function render(data) {
   $('stats').replaceChildren(statBox('Đăng nhập', `${data.logged_in}/${data.roster.length}`), statBox('Đã trả lời', `${answered}/${data.roster.length}`), statBox('Chưa trả lời', waiting), statBox('Đúng', chosenStats?.correct || 0), statBox('Sai', chosenStats?.wrong || 0), statBox('Tỷ lệ đúng', `${chosenStats?.accuracy || 0}%`));
   const percent = data.roster.length ? Math.round(answered / data.roster.length * 100) : 0;
   $('response-progress').style.width = percent + '%'; $('response-caption').textContent = `${percent}% sinh viên đã trả lời câu đang xem`;
-  $('distribution').replaceChildren(...distributionRows(chosenStats?.distribution || {A:0,B:0,C:0,D:0}, answered)); $('dist-title').textContent = 'Phân bố đáp án';
+  $('distribution').replaceChildren(distributionChart('live' + (chosen?.id ?? ''), chosenStats?.distribution || {A:0,B:0,C:0,D:0}, answered, chosen && revealed.has(String(chosen.id)) ? chosen.correct_answer : '')); $('dist-title').textContent = 'Phân bố đáp án';
   $('roster-preview').replaceChildren(...data.roster.map(student => {
     const row = document.createElement('div'); row.className = 'roster-person' + (!student.device_uid ? ' absent' : '');
     const name = document.createElement('strong'); name.textContent = `${student.student_no}. ${student.student_name}`;
@@ -619,7 +735,7 @@ function render(data) {
   if (data.pacing === 'self') drawSelf(data, lock, active, finished); else { selfClock.end = 0; tickSelfClock(); }
   document.body.classList.toggle('self-room', data.pacing === 'self');
   renderResults(data);
-  renderAnalysis(data); updateClearButtons();
+  renderAnalysis(data); updateClearButtons(); window.AIReview?.students(data.roster, data.report);
   if (data.mode && data.mode !== mode) applyMode(data.mode, true); else renderConnection();
 }
 async function refresh(force = false) {
@@ -751,7 +867,7 @@ handle('export-xlsx', 'click', async () => {
 });
 $('join-approve-all').addEventListener('click', () => decideJoin('approve_join', 'all', $('join-approve-all')));
 $('join-reject-all').addEventListener('click', () => { if (confirm(I18N.t('Từ chối tất cả yêu cầu đang chờ?'))) decideJoin('reject_join', 'all', $('join-reject-all')); });
-$('show-results').addEventListener('click', () => { resultsOn = !resultsOn; if (current) render(current); });
+$('show-results').addEventListener('click', () => { resultsOn = !resultsOn; revealFresh = resultsOn; revealUntil = 0; if (current) render(current); });
 $('edit-question').addEventListener('click', () => {
   const id = $('question-select').value;
   if (current && id) ExamEditor.quickEdit(Number(current.session.exam_id), Number(id));

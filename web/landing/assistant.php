@@ -58,8 +58,14 @@ What Clicker is:
 - Teacher flow: import the class list and a question bank from Excel/CSV/text → create a room → open sign-in → start
   (or AUTO with seconds per question) → NEXT → END. Live dashboard, per-question analysis, results table with privacy mode,
   CSV/Excel export.
-- AI quiz authoring (create a quiz from a description, from course material, or convert old Word/Excel quizzes) is COMING SOON,
-  not available yet.
+- Menu: Tổng quan · Chuẩn bị (① Lớp học → ② Bộ đề → ③ Phòng) · Trực tiếp · Phân tích · Kết quả · Thiết bị. Several teachers can
+  run rooms at the same time; each room is Wi-Fi (phones/laptops type the 6-digit room code) or BLE (Student Tags through the USB
+  gateway; on a tag students type ONLY their student ID, never the room code).
+- AI quiz authoring (Chuẩn bị → Bộ đề → Tạo bằng AI): paste course text or upload PDF, Word (.docx), PowerPoint (.pptx) or a
+  questions.json file; choose the model (cloud Gemini or "Model trong máy" modelv3 running on the server laptop); the AI writes
+  questions with difficulty, topic, explanation and the page/slide it comes from; questions not found in the material are
+  unticked; the teacher reviews then saves into a question set.
+- AI feedback (Kết quả → Nhận xét bài làm): for the whole class or one student: strengths, mistakes, topics to review, study tips.
 - Plans. Every price is VND PER ACCOUNT PER MONTH. "Yearly" means the same monthly price but paid 12 months at once.
   | Plan         | paid monthly | paid yearly (per month) | total per year |
   | Free         | 0            | 0                       | 0              |

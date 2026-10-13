@@ -10,22 +10,40 @@
   <link rel="apple-touch-icon" href="landing/apple-touch-icon.png">
   <script>try{const t=localStorage.getItem('clicker-theme')||'light';document.documentElement.dataset.theme=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t}catch{}</script>
   <link rel="stylesheet" href="style.css?v=20261013-1">
-  <link rel="stylesheet" href="theme.css?v=34">
+  <link rel="stylesheet" href="theme.css?v=46">
   <link rel="stylesheet" href="landing/assistant.css?v=2">
   <script src="landing/i18n.js?v=8" defer></script>
-  <script src="dash-i18n.js?v=19" defer></script>
+  <script src="dash-i18n.js?v=24" defer></script>
   <script src="vendor/xlsx.full.min.js" defer></script>
-  <script src="ai-quiz.js?v=2" defer></script>
+  <script src="vendor/qrcode.js" defer></script>
+  <script src="ai-quiz.js?v=5" defer></script>
   <script src="library.js?v=1" defer></script>
   <script src="exam-editor.js?v=4" defer></script>
   <script src="gateway.js?v=2" defer></script>
-  <script src="app.js?v=20261013-2" defer></script>
-    <script src="account.js?v=3" defer></script>
+  <script src="app.js?v=20261013-13" defer></script>
+    <script src="account.js?v=4" defer></script>
   <script src="admin.js?v=8" defer></script>
   <script src="dash-fx.js?v=3" defer></script>
   <script src="landing/assistant.js?v=5" defer></script>
 </head>
 <body data-mode="wifi">
+<div id="code-stage" class="code-stage" hidden role="dialog" aria-modal="true" aria-label="Mã phòng">
+  <i class="cs-orb o1"></i><i class="cs-orb o2"></i><i class="cs-orb o3"></i><i class="cs-dots"></i>
+  <div class="cs-brand"><span class="cs-logo">C</span><b>Clicker</b></div>
+  <div class="cs-body">
+    <p class="cs-kicker">MÃ PHÒNG</p>
+    <div id="cs-code" class="cs-code" data-noi18n></div>
+    <div id="cs-lobby" class="cs-lobby">
+      <div id="cs-qr-tile" class="cs-qr"><svg id="cs-qr" viewBox="0 0 1 1" role="img" aria-label="QR vào lớp" shape-rendering="crispEdges"></svg></div>
+      <div class="cs-joined">
+        <div class="cs-count"><b id="cs-n" data-noi18n>0</b><span id="cs-of" data-noi18n>/0</span><small>đã vào</small></div>
+        <div id="cs-chips" class="cs-chips" data-noi18n></div>
+      </div>
+    </div>
+  </div>
+  <button type="button" id="cs-view" class="cs-close cs-view">Chỉ hiện mã</button>
+  <button type="button" id="cs-close" class="cs-close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>Thu nhỏ</button>
+</div>
   <div id="net-wait" class="net-wait on" role="status" aria-live="polite"><div class="nw-logo" aria-hidden="true"><span class="nw-ring"></span><i>C</i></div><p id="net-wait-text">Đang tải Clicker…</p></div>
   <div class="app-shell">
     <!-- Left menu (a top bar on phones). The links keep the class "side-nav": app.js routes views through it. -->
@@ -69,7 +87,7 @@
         <p id="notice" class="notice show" role="status" aria-live="polite">Đang kết nối…</p>
         <div id="view-banner" class="view-banner" hidden><span>👁 Đang xem dữ liệu của <b id="view-name"></b> · chỉ đọc, không sửa được</span><button type="button" id="view-stop" class="light-button">Thoát chế độ xem</button></div>
         <div id="workspace" hidden>
-          <section id="overview" class="hero section-anchor" data-view="overview"><div class="hero-copy"><span class="hero-kicker"><span class="pulse-dot"></span> LỚP HỌC TƯƠNG TÁC · KẾT QUẢ TỨC THÌ</span><h2 id="hero-hello">Học vui hơn,<br><em>kiểm tra thông minh hơn.</em></h2><p>Soạn đề một lần, cả lớp trả lời bằng điện thoại hoặc máy bấm, điểm hiện ngay.</p><a class="hero-link" href="#setup">Chuẩn bị buổi kiểm tra <span aria-hidden="true">↗</span></a></div>
+          <section id="overview" class="hero section-anchor" data-view="overview"><div class="hero-copy"><span class="hero-kicker"><span class="pulse-dot"></span> LỚP HỌC TƯƠNG TÁC · KẾT QUẢ TỨC THÌ</span><h2 id="hero-hello">Chào bạn,<br><em>Student Tag, thiết bị kiểm tra thông minh cho môi trường học đường.</em></h2><p>Soạn đề một lần, cả lớp trả lời bằng điện thoại hoặc máy bấm, điểm hiện ngay.</p><a class="hero-link" href="#setup">Chuẩn bị buổi kiểm tra <span aria-hidden="true">↗</span></a></div>
             <div class="hero-art" aria-hidden="true">
               <svg viewBox="0 0 340 260">
                 <defs><linearGradient id="hg-screen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#E4F5ED"/></linearGradient></defs>
@@ -135,9 +153,9 @@
                     <div class="actions"><button class="primary" id="hand-save">Lưu câu hỏi</button><span id="hand-count" class="hint"></span></div>
                   </form>
                 </div>
-                <div data-segpane="x-ai" hidden id="ai-card"><div class="ai-model-row"><span id="ai-model" class="mini-state"></span></div><form id="ai-form" novalidate>
+                <div data-segpane="x-ai" hidden id="ai-card"><div class="ai-model-row"><label class="ai-provider">Mô hình<select id="ai-provider"></select></label><span id="ai-model" class="mini-state"></span></div><form id="ai-form" novalidate>
                 <label class="sr-label"><span>Nội dung môn học</span><textarea id="ai-content" rows="7" placeholder="Ví dụ: dán nội dung chương 2 · Định luật Ohm, mạch nối tiếp, mạch song song…"></textarea></label>
-                <div class="ai-row"><label class="file-label">Hoặc chọn file<input id="ai-file" type="file" accept=".txt,.md,.csv"></label><span class="hint" id="ai-len"></span></div>
+                <div class="ai-row"><label class="file-label">Hoặc chọn file (PDF, Word, PowerPoint, questions.json)<input id="ai-file" type="file" accept=".pdf,.docx,.pptx,.txt,.md,.csv,.json"></label><span class="hint" id="ai-len"></span></div>
                 <div class="ai-opts">
                   <label>Số câu<input id="ai-count" type="number" min="1" max="40" value="10"></label>
                   <label>Độ khó<select id="ai-level"><option value="de">Dễ</option><option value="tb">Trung bình</option><option value="kho">Khó</option><option value="nangcao">Nâng cao</option><option value="tron" selected>Trộn đều (dễ → nâng cao)</option></select></label>
@@ -159,7 +177,7 @@
 
           <section id="room" class="section-anchor" data-view="room">
             <div class="room-grid"><article class="card create-card"><div class="card-title"><div><span class="eyebrow">TẠO BUỔI MỚI</span><h3>Thiết lập phòng kiểm tra</h3></div></div><p id="room-empty" class="room-empty" hidden>Cần có lớp và bộ đề trước. <a href="#classes">Lớp học ↗</a> · <a href="#prepare">Bộ đề ↗</a></p><form id="session-create"><label>Tên buổi kiểm tra<input id="session-title" required maxlength="120" placeholder="Ví dụ: Kiểm tra giữa kỳ · Lớp 12A1"></label><div class="form-pair"><div class="field"><label for="class-select">Chọn lớp</label><div class="select-wrap"><select id="class-select" required></select><button type="button" class="clear-select" data-clear="class-select" aria-label="Bỏ chọn lớp">×</button></div></div><div class="field"><label for="exam-select">Chọn bộ đề</label><div class="select-wrap"><select id="exam-select" required></select><button type="button" class="clear-select" data-clear="exam-select" aria-label="Bỏ chọn bộ đề">×</button></div></div></div><label for="pacing-select">Hình thức làm bài</label><select id="pacing-select" class="pacing-select"><option value="teacher">Giáo viên điều khiển (NEXT / AUTO, mọi chế độ)</option><option value="self">Sinh viên tự làm trên máy (chỉ Wi-Fi)</option></select><label>Giây mỗi câu<input id="auto-seconds" type="number" value="30" min="1" max="3600" step="1" required></label><button class="primary">Tạo session <span aria-hidden="true">↗</span></button></form></article>
-            <article class="card room-card"><div class="card-title"><div><span class="eyebrow">PHÒNG ĐANG XEM</span><h3 id="room-title">Chưa chọn phòng</h3></div><span id="room-badge" class="state-badge">Chờ thiết lập</span></div><div class="field"><label for="session-select">Buổi kiểm tra đã tạo</label><div class="select-wrap"><select id="session-select"></select><button type="button" class="clear-select" data-clear="session-select" aria-label="Bỏ chọn session">×</button></div></div><p id="session-status" class="hint">Chưa chọn buổi học.</p><div class="room-quick"><span class="room-quick-icon">⌁</span><div><strong>Đã kết nối</strong><span id="device-status">Thiết bị online: 0</span></div></div><div id="room-code-box" class="room-code" hidden><small>MÃ PHÒNG</small><strong id="room-code" data-noi18n></strong></div><div class="actions"><button id="open-login" class="primary">Mở đăng nhập</button></div></article></div>
+            <article class="card room-card"><div class="card-title"><div><span class="eyebrow">PHÒNG ĐANG XEM</span><h3 id="room-title">Chưa chọn phòng</h3></div><span id="room-badge" class="state-badge">Chờ thiết lập</span></div><div class="field"><label for="session-select">Buổi kiểm tra đã tạo</label><div class="select-wrap"><select id="session-select"></select><button type="button" class="clear-select" data-clear="session-select" aria-label="Bỏ chọn session">×</button></div></div><p id="session-status" class="hint">Chưa chọn buổi học.</p><div class="room-quick"><span class="room-quick-icon">⌁</span><div><strong>Đã kết nối</strong><span id="device-status">Thiết bị online: 0</span></div></div><div id="room-code-box" class="room-code" hidden><small>MÃ PHÒNG</small><strong id="room-code" data-noi18n></strong><button type="button" id="code-zoom" class="code-zoom" aria-label="Phóng to mã phòng" title="Phóng to cho cả lớp xem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div><div class="actions"><button id="open-login" class="primary">Mở đăng nhập</button></div></article></div>
             <article id="join-card" class="card join-card" hidden><div class="card-title"><div><span class="eyebrow">SINH VIÊN XIN VÀO LỚP</span><h3>Chờ duyệt <span id="join-count" class="join-count">0</span></h3></div><div class="actions"><button type="button" id="join-approve-all" class="primary">✓ Duyệt tất cả</button><button type="button" id="join-reject-all" class="secondary">✗ Từ chối tất cả</button></div></div><div id="join-list" class="join-list"></div></article><article class="card participants-card"><div class="card-title"><div><span class="eyebrow">SINH VIÊN TRONG PHÒNG</span><h3>Ai đã vào phòng?</h3></div><span id="participant-count" class="state-badge">0/0</span></div><p class="legend-line"><span class="legend joined">●</span> Đã vào <span class="legend absent">●</span> Chưa vào</p><div id="participants" class="participants">Chưa chọn phòng.</div></article>
             <article class="card sessions-card"><span class="eyebrow">QUẢN LÝ SESSION</span><h3>Buổi kiểm tra đã tạo</h3><div id="manage-sessions" class="manage-list"></div></article>
             <div class="join-strip"><div class="join-symbol">↗</div><div><h3 id="join-title">Link cho sinh viên</h3><p id="join-text" hidden></p><code id="phone-url" class="wifi-only">Đang tải liên kết…</code></div><div class="join-actions wifi-only"><a id="phone-link" class="light-button" href="phone.html" target="_blank" rel="noopener">Mở clicker điện thoại ↗</a><button id="copy-phone-link" class="outline-light">Sao chép liên kết</button></div></div>
@@ -172,7 +190,7 @@
 
           <section id="analysis-section" class="section-anchor" data-view="analysis-section"><div class="analysis-grid"><article class="card"><div class="analysis-head"><div><span class="eyebrow">CÁC CÂU ĐÃ LÀM</span><h3>Tỷ lệ sai theo câu</h3></div><button id="sort-wrong" class="secondary" aria-pressed="false">Sắp xếp: STT</button></div><div id="analysis-list" class="analysis-list"></div></article><article class="card"><div class="analysis-head"><div><span class="eyebrow">CHI TIẾT CÂU HỎI</span><h3 id="analysis-title">Chọn một câu đã làm</h3></div><button id="analysis-answer-toggle" class="ghost" aria-pressed="false">XEM ĐÁP ÁN</button></div><div id="analysis-detail" class="analysis-detail">Chưa có câu hỏi đã làm.</div></article></div></section>
 
-          <section id="results-section" class="section-anchor" data-view="results-section"><div class="card results-card"><div class="results-toolbar"><div><span class="eyebrow">DANH SÁCH & BẢNG ĐIỂM</span><h3>Trạng thái từng sinh viên</h3></div><div class="actions"><button id="privacy-mode" class="ghost" aria-pressed="false">Privacy</button><button id="export-csv" class="secondary">Xuất CSV</button><button id="export-xlsx" class="secondary">Xuất Excel</button></div></div><div class="table-scroll"><table id="results"><thead></thead><tbody></tbody></table></div></div></section>
+          <section id="results-section" class="section-anchor" data-view="results-section"><div class="card results-card"><div class="results-toolbar"><div><span class="eyebrow">DANH SÁCH & BẢNG ĐIỂM</span><h3>Trạng thái từng sinh viên</h3></div><div class="actions"><button id="privacy-mode" class="ghost" aria-pressed="false">Privacy</button><button id="export-csv" class="secondary">Xuất CSV</button><button id="export-xlsx" class="secondary">Xuất Excel</button></div></div><div class="table-scroll"><table id="results"><thead></thead><tbody></tbody></table></div></div><div class="card ai-review" id="ai-review"><div class="results-toolbar"><div><span class="eyebrow">AI</span><h3>Nhận xét bài làm</h3></div><div class="actions"><select id="air-who" aria-label="Nhận xét cho"><option value="">Cả lớp</option></select><select id="air-provider" aria-label="Mô hình"></select><button id="air-go" class="primary">✨ Nhận xét</button></div></div><div id="air-out" class="air-out" hidden></div><div class="air-each"><div class="air-each-head"><div><span class="eyebrow">TỪNG BẠN</span><h4>Gợi ý ôn tập riêng cho mỗi sinh viên</h4></div><div class="actions"><span id="air-each-state" class="mini-state" hidden></span><button id="air-each" class="secondary">✨ Gợi ý cho từng bạn</button><button id="air-each-csv" class="ghost" hidden>Tải CSV</button></div></div><div id="air-each-list" class="air-each-list"></div></div></div></section>
 
           <dialog id="quick-edit" class="quick-dialog" aria-label="Sửa câu hỏi"><div id="quick-edit-body"></div></dialog>
           <section id="admin-section" class="section-anchor admin" data-view="admin-section">

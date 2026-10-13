@@ -100,7 +100,7 @@ function ops_ready(PDO $db): bool {
 // Feature switches the admin turns on/off on the web. All on unless an admin switched one off.
 // Version of the web pages. Apache sends no cache headers for .html (and none can be added without root), so a browser may keep
 // an old page after a deploy: the pages compare this with their own copy and reload once when it differs. Bump on every deploy.
-const WEB_VERSION = '20261013-2';
+const WEB_VERSION = '20261013-13';
 
 const SETTINGS = ['allow_register' => 'Cho đăng ký tài khoản giáo viên mới', 'assistant' => 'Trợ lý AI', 'self_paced' => 'Hình thức "Sinh viên tự làm"', 'self_join' => 'Sinh viên tự đăng ký vào lớp', 'ble_sim' => 'Máy bấm mô phỏng trên điện thoại (BLE)'];
 function setting(PDO $db, string $name): bool {
@@ -219,7 +219,77 @@ function insert_question(PDO $db, int $examId, array $q): int {
     $no = 1 + (int)query($db, 'SELECT COALESCE(MAX(question_no),0) FROM question WHERE exam_id=?', [$examId])->fetchColumn();
     query($db, 'INSERT INTO question(exam_id,question_no,question_text,answer_A,answer_B,answer_C,answer_D,correct_answer) VALUES(?,?,?,?,?,?,?,?)',
         [$examId, $no, $q['question_text'], $q['answer_A'], $q['answer_B'], $q['answer_C'], $q['answer_D'], $q['correct_answer']]);
-    return (int)$db->lastInsertId();
+    $id = (int)$db->lastInsertId();
+    if (($q['topic'] ?? '') . ($q['explanation'] ?? '') !== '' && meta_ready($db)) query($db, 'UPDATE question SET topic=?,explanation=? WHERE id=?', [$q['topic'] ?: null, $q['explanation'] ?: null, $id]);
+    return $id;
+}
+// question.topic / question.explanation (tools/upgrade_ai.php): what the AI or a questions.json file said about a question;
+// "Nhận xét bằng AI" groups mistakes by topic. Without the columns they are simply not kept.
+// UTF-8 helpers (this PHP has no mbstring): first $n characters, and the number of characters.
+function u_cut(string $s, int $n): string { preg_match('/^.{0,' . $n . '}/su', $s, $m); return $m[0] ?? ''; }
+function u_len(string $s): int { return (int)preg_match_all('/./su', $s); }
+function meta_ready(PDO $db): bool {
+    static $ready = null;
+    return $ready ??= (bool)$db->query("SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='question' AND column_name='topic'")->fetchColumn();
+}
+function question_meta(mixed $row): array {
+    $text = fn($k, $n) => is_array($row) && is_string($row[$k] ?? null) && preg_match('//u', $row[$k]) ? u_cut(trim($row[$k]), $n) : '';
+    return ['topic' => $text('topic', 80), 'explanation' => $text('explanation', 400)];
+}
+// The facts "Nhận xét bằng AI" sends to the model: the questions opened in the room (text, key, topic, how many got them
+// right, the most chosen wrong answer) and either the class scores or one student's answers. No names leave the server.
+// Personal feedback for many students: the questions once, then each student's answers under a code (S1, S2…), so no
+// name or MSSV reaches the model. Returns [facts, codes] where codes maps S1 → student_id.
+function review_facts_many(PDO $db, array $room, array $studentIds): array {
+    $facts = review_facts($db, $room, null);
+    $rep = report($db, (int)$room['id']);
+    $meta = meta_ready($db) ? ',q.topic' : '';
+    $qs = query($db, "SELECT q.question_no,q.correct_answer$meta FROM question q JOIN session_question sq ON sq.question_id=q.id AND sq.session_id=? ORDER BY q.question_no", [$room['id']])->fetchAll();
+    $byId = [];
+    foreach ($rep['rows'] as $r) $byId[$r['student_id']] = $r;
+    $students = []; $codes = [];
+    foreach (array_values(array_unique($studentIds)) as $i => $id) {
+        $me = $byId[$id] ?? null;
+        if (!$me) reject('STUDENT_NOT_FOUND', 'Sinh viên không có trong phòng này.', 404);
+        $code = 'S' . ($i + 1); $codes[$code] = $id;
+        $row = [];
+        foreach ($qs as $q) { $a = $me['answers']['Q' . $q['question_no']] ?? ''; $row[] = ['no' => (int)$q['question_no'], 'result' => $a === '' ? 'blank' : ($a === $q['correct_answer'] ? 'right' : 'wrong')] + ($a !== '' && $a !== $q['correct_answer'] ? ['chose' => $a] : []); }
+        $students[] = ['id' => $code, 'score10' => $me['score10'], 'right' => $me['correct'], 'answers' => $row];
+    }
+    unset($facts['class']);
+    $facts['students'] = $students;
+    return [$facts, $codes];
+}
+function review_facts(PDO $db, array $room, ?string $studentId): array {
+    $meta = meta_ready($db) ? ',q.topic' : '';
+    $qs = query($db, "SELECT q.id,q.question_no,q.question_text,q.answer_A,q.answer_B,q.answer_C,q.answer_D,q.correct_answer$meta FROM question q JOIN session_question sq ON sq.question_id=q.id AND sq.session_id=? ORDER BY q.question_no", [$room['id']])->fetchAll();
+    if (!$qs) reject('NO_ANSWERS', 'Phòng này chưa làm câu nào.', 409);
+    $rep = report($db, (int)$room['id']);
+    $joined = array_values(array_filter($rep['rows'], fn($r) => array_filter($r['answers'], 'strlen')));
+    $picks = [];
+    foreach ($joined as $r) foreach ($r['answers'] as $k => $a) if ($a !== '') $picks[$k][$a] = ($picks[$k][$a] ?? 0) + 1;
+    $questions = [];
+    foreach ($qs as $q) {
+        $k = 'Q' . $q['question_no']; $p = $picks[$k] ?? [];
+        $wrong = array_diff_key($p, [$q['correct_answer'] => 1]); arsort($wrong);
+        $questions[] = array_filter(['no' => (int)$q['question_no'], 'topic' => $q['topic'] ?? null, 'question' => u_cut($q['question_text'], 300),
+            'correct' => $q['correct_answer'] . '. ' . u_cut($q['answer_' . $q['correct_answer']], 150),
+            'right_pct' => $joined ? (int)round(($p[$q['correct_answer']] ?? 0) / count($joined) * 100) : 0,
+            'common_wrong' => $wrong ? array_key_first($wrong) . '. ' . u_cut($q['answer_' . array_key_first($wrong)], 150) : null], fn($v) => $v !== null && $v !== '');
+    }
+    $facts = ['test' => $room['title'] ?? '', 'questions_done' => count($qs), 'questions' => $questions];
+    if ($studentId === null) {
+        $scores = array_map(fn($r) => (float)$r['score10'], $joined);
+        $facts['class'] = ['students_answered' => count($joined), 'students_in_list' => count($rep['rows']),
+            'average_score10' => $scores ? round(array_sum($scores) / count($scores), 1) : 0, 'highest' => $scores ? max($scores) : 0, 'lowest' => $scores ? min($scores) : 0];
+        return $facts;
+    }
+    $me = current(array_filter($rep['rows'], fn($r) => $r['student_id'] === $studentId));
+    if (!$me) reject('STUDENT_NOT_FOUND', 'Sinh viên không có trong phòng này.', 404);
+    $answers = [];
+    foreach ($qs as $q) { $a = $me['answers']['Q' . $q['question_no']] ?? ''; $answers[] = ['no' => (int)$q['question_no'], 'chose' => $a === '' ? 'no answer' : $a, 'result' => $a === '' ? 'blank' : ($a === $q['correct_answer'] ? 'right' : 'wrong')]; }
+    $facts['student'] = ['score10' => $me['score10'], 'right' => $me['correct'], 'answers' => $answers];
+    return $facts;
 }
 
 function parse_exam(string $text): array {

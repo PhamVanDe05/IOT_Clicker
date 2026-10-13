@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS question (
     answer_A TEXT NOT NULL, answer_B TEXT NOT NULL,
     answer_C TEXT NOT NULL, answer_D TEXT NOT NULL,
     correct_answer CHAR(1) NOT NULL CHECK(correct_answer IN ('A','B','C','D')),
+    topic VARCHAR(80) NULL, explanation VARCHAR(400) NULL,   -- from the AI or a questions.json file
     UNIQUE(exam_id, question_no),
     FOREIGN KEY(exam_id) REFERENCES exam(id)
 ) ENGINE=InnoDB;

@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 const S = {uid:'', csrf:'', online:false, offlineSince:0, data:null, mode:'wifi', pending:null, busy:false,
   roomOk:false, roomSession:null, room:'', selected:'', name:'', lastQuestion:null, selfDone:null, deadline:0, pollAt:0};
 // A page kept from before a deploy (Apache sends no cache headers): reload it once, with a fresh URL, when the server runs another version.
-const WEB_VERSION = '20261013-2';
+const WEB_VERSION = '20261013-13';
 function freshPage(serverVersion) {
   if (!serverVersion || serverVersion === WEB_VERSION) return false;
   try { if (sessionStorage.getItem('clicker-reloaded') === serverVersion) return false; sessionStorage.setItem('clicker-reloaded', serverVersion); } catch { return false; }
@@ -74,10 +74,15 @@ async function register(id) {
   catch (error) { toast(error.message); }
 }
 
+/* ---------- vibration: like the board (firmware/ClickerTag VIBRATE_MS): one light buzz when OK / Gửi is pressed and one when a new
+   question arrives. Android Chrome only: iPhone browsers have no vibration API, and the page must have been tapped once. ---------- */
+function vibrate(n = 1) { try { navigator.vibrate?.(Array(n).fill(60).flatMap(x => [x, 80])); } catch { /* not supported */ } }
+
 /* ---------- answering ---------- */
 for (const b of document.querySelectorAll('[data-ans]')) b.addEventListener('click', () => { S.selected = b.dataset.ans; render(); });
 $('send').addEventListener('click', async () => {
   const q = S.data?.question; if (!q || !S.selected) return;
+  vibrate(1);
   S.pending = {action:'answer', session_id:S.data.session_id, question_id:q.question_id, answer:S.selected}; savePending();
   render(); await tick();
 });
@@ -129,7 +134,7 @@ function render() {
     if (!q && d.pacing === 'self' && d.state === 'QUESTION_ACTIVE') return done();
     if (S.pending?.action === 'answer') return wait('Đang gửi đáp án ' + S.pending.answer + '…', 'Giữ trang này mở.');
     if (q && !q.accepted_answer) {
-      if (S.lastQuestion !== q.question_id) { S.lastQuestion = q.question_id; S.selected = ''; S.maxLeft = 0; }
+      if (S.lastQuestion !== q.question_id) { S.lastQuestion = q.question_id; S.selected = ''; S.maxLeft = 0; vibrate(1); }
       $('q-no').textContent = q.total ? `Câu ${q.index}/${q.total}` : 'Câu ' + q.question_no;
       $('q-text').textContent = q.text || '';
       for (const b of document.querySelectorAll('[data-ans]')) {
@@ -177,8 +182,9 @@ function done() {
   show('s-done');
 }
 
-/* ---------- BLE: a Student Tag of this browser's own (server id NRF-SIM-…), screen rules of
-   firmware/StudentTagNRF52/tag_controller.h: Lo → MSSV → OK → Hi → question number → 1–4 → OK → A= ---------- */
+/* ---------- BLE: a Student Tag of this browser's own (server id NRF-SIM-…). Screen, timings and buzzes follow
+   firmware/ClickerTag/ClickerTag.ino (struct Tag): power-up chase → -- → Lo → MSSV → OK → Hi → rd → question number →
+   1–4 → OK → A= → at the end the score (5 s), En (3 s), then the display sleeps (30 s idle sleeps it too; a key wakes it). ---------- */
 const Tag = (() => {
   const SEG = {'0':0x3F,'O':0x3F,'1':0x06,'2':0x5B,'3':0x4F,'4':0x66,'5':0x6D,'S':0x6D,'6':0x7D,'7':0x07,'8':0x7F,'9':0x6F,'A':0x77,'b':0x7C,'B':0x7C,
     'C':0x39,'d':0x5E,'D':0x5E,'E':0x79,'F':0x71,'H':0x76,'i':0x04,'L':0x38,'n':0x54,'o':0x5C,'r':0x50,'-':0x40,'=':0x48};
@@ -189,37 +195,66 @@ const Tag = (() => {
   const led = $('led');
   led.innerHTML = [0, 1].map(d => P.map((p, i) => `<polygon class="seg" data-d="${d}" data-s="${i}" points="${p.map((v, j) => j % 2 ? v : v + 8 + d * 58).join(' ')}"/>`).join('')).join('');
   const segs = [...led.querySelectorAll('.seg')];
-  const t = {data:null, input:'', selected:'', pending:null, notice:'', noticeAt:0, question:0, off:false};
+  // Same numbers as the firmware (ms)
+  const NOTICE_MS = 1500, GATEWAY_TIMEOUT_MS = 5000, DISPLAY_SLEEP_MS = 30000, SCORE_SHOW_MS = 5000, END_SHOW_MS = 3000, SCORE_WAIT_MS = 10000,
+    STARTUP_STEP_MS = 200, STARTUP_ROUNDS = 3;
+  const t = {data:null, input:'', selected:'', pending:null, notice:'', noticeAt:0, question:0, off:false,
+    awake:true, activeAt:Date.now(), heard:false, heardAt:0, state:'', hasScore:false, score:0, scoreAt:0, finishedAt:0, startAt:0};
   let timer = null;
+  const wake = (now = Date.now()) => { t.awake = true; t.activeAt = now; };
+  // Power-up effect: one segment per step round the two digits (a2 a1 b1 c1 d1 d2 e2 f2), three rounds, a buzz each round.
+  const CHASE = [[1, 0], [0, 1], [0, 2], [0, 4], [0, 8], [8, 0], [16, 0], [32, 0]];   // [left digit, right digit] segment bits
+  const startupStep = now => t.startAt ? Math.floor((now - t.startAt) / STARTUP_STEP_MS) : 99;
+  // Score out of 10 in tenths, cut not rounded: 9.75 → 97 → "97"; a whole score shows as a number (10 → "10", 5.0 → " 5")
+  const tensOf = n => (n %= 100) < 10 ? ' ' : String(Math.floor(n / 10)), unitsOf = n => String(n % 10);
+  const scoreChars = tenths => tenths % 10 ? [String(Math.floor(tenths / 10) % 10), String(tenths % 10)] : [tensOf(tenths / 10), unitsOf(tenths / 10)];
+  const fmtScore = tenths => String(tenths / 10).replace('.', ',');
 
-  function view(now = Date.now()) {   // [two characters, blink, status line]
-    const d = t.data, q = d?.question, logged = !!d?.student_id;
-    if (t.notice && now - t.noticeAt < 1500) return [t.notice, false, t.notice === 'Hi' ? 'Đã vào lớp' : 'Lỗi ' + t.notice];
+  // End of the test, as the firmware does it: score for 5 s, "En" for 3 s, then the display sleeps; a tag still waiting for its
+  // score shows "En" for up to 10 s; a key pressed after it slept shows "En" again.
+  function finished(now, logged) {
+    const start = t.hasScore ? t.scoreAt : t.finishedAt;
+    const scoreEnd = start + (t.hasScore ? SCORE_SHOW_MS : 0);
+    const end = scoreEnd + (t.hasScore || !logged ? END_SHOW_MS : SCORE_WAIT_MS);
+    if (t.activeAt <= end) {
+      if (now < scoreEnd) return [scoreChars(t.score).join(''), false, `Điểm: ${fmtScore(t.score)}/10`];
+      if (now >= end) { t.awake = false; return ['  ', false, 'Màn hình đã tắt, bấm phím để bật']; }
+    }
+    return ['En', false, t.hasScore ? `Kết thúc · điểm ${fmtScore(t.score)}/10` : 'Kết thúc'];
+  }
+
+  function view(now = Date.now()) {   // [two characters, blink, status line]; same order of rules as Tag::screen()
+    const d = t.data, q = d?.question, logged = !!d?.student_id || (d?.state === 'FINISHED' && !!d?.self_done);   // after the end the server only sends self_done
+    if (!t.pending && now - t.activeAt > DISPLAY_SLEEP_MS) t.awake = false;
+    if (!t.awake) return ['  ', false, 'Màn hình đã tắt, bấm phím để bật'];
+    if (t.notice && now - t.noticeAt < NOTICE_MS) return [t.notice, false, t.notice === 'Hi' ? 'Đã vào lớp' : 'Lỗi ' + t.notice];
     if (t.pending?.action === 'login') return [t.input.slice(-2).padStart(2, ' '), true, 'Đang gửi MSSV…'];
     if (t.pending) return [' ' + t.pending.answer, true, 'Đang gửi đáp án…'];
+    if (!t.heard) return ['--', false, 'Đang kết nối…'];
+    if (now - t.heardAt > GATEWAY_TIMEOUT_MS) return ['nC', false, 'Mất kết nối (nC)'];
     if (t.off) return ['OF', false, 'Quản trị viên đã tắt tag mô phỏng.'];
-    if (!d) return ['--', false, 'Đang kết nối…'];
-    if (!S.online) return ['nS', false, 'Mất kết nối máy chủ'];
-    if (d.state === 'FINISHED') return ['En', false, 'Kết thúc'];
+    if (d.state === 'FINISHED') return finished(now, logged);
     if (!d.session_id || d.state === 'WAIT_SESSION' || d.state === 'CREATED') return ['--', false, 'Chờ giảng viên mở phòng'];
     if (!logged) return d.state !== 'LOGIN_OPEN' ? ['LC', false, 'Đăng nhập đã đóng']
       : [t.input ? t.input.slice(-2).padStart(2, ' ') : 'Lo', false, 'Nhập MSSV bằng phím số rồi bấm OK'];
-    if (d.state !== 'QUESTION_ACTIVE' || !q) return ['rd', false, 'Chờ câu hỏi'];
+    if (d.state !== 'QUESTION_ACTIVE' || !q) return ['rd', false, 'Sẵn sàng, chờ câu hỏi'];
     if (q.accepted_answer) return [q.accepted_answer + '=', false, 'Đã gửi đáp án'];
     if (t.selected) return [' ' + t.selected, false, 'Bấm OK để gửi'];
-    const n = q.question_no % 100;
-    return [(n < 10 ? ' ' : String(Math.floor(n / 10))) + n % 10, false, `Câu ${q.question_no}: chọn 1–4 (= A–D)`];
+    return [tensOf(q.question_no) + unitsOf(q.question_no), false, `Câu ${q.question_no}: chọn 1–4 (= A–D)`];
   }
   function draw() {
-    const [text, blink, status] = view();
-    for (const sg of segs) sg.classList.toggle('on', !!((SEG[text[+sg.dataset.d]] || 0) >> +sg.dataset.s & 1));
+    const now = Date.now(), step = startupStep(now), chase = step < 8 * STARTUP_ROUNDS;
+    const [text, blink, status] = chase ? ['  ', false, 'Đang khởi động…'] : view(now);
+    const mask = d => chase ? CHASE[step % 8][d] : SEG[text[d]] || 0;
+    for (const sg of segs) sg.classList.toggle('on', !!(mask(+sg.dataset.d) >> +sg.dataset.s & 1));
+    if (chase && step % 8 === 0 && t.lastBuzzStep !== step) { t.lastBuzzStep = step; buzz(1); }
     led.parentElement.classList.toggle('blink', blink);
     $('tag-status').textContent = status;
     const d = t.data;
     $('tag-who').hidden = !d?.student_id; $('tag-who').textContent = d?.student_id ? `${d.student_name || ''} · MSSV ${d.student_id}` : '';
   }
-  const buzz = n => { const el = $('tag-dev'); el.classList.remove('buzz'); void el.offsetWidth; el.style.animationIterationCount = n * 4; el.classList.add('buzz'); navigator.vibrate?.(Array(n).fill(120).flatMap(x => [x, 80])); };
-  const notice = text => { t.notice = text; t.noticeAt = Date.now(); };
+  const buzz = n => { const el = $('tag-dev'); el.classList.remove('buzz'); void el.offsetWidth; el.style.animationIterationCount = n * 4; el.classList.add('buzz'); vibrate(n); };
+  const notice = text => { t.notice = text; t.noticeAt = Date.now(); wake(); };
 
   // One round with the server, called by tick(): the waiting request first (kept until answered, like the board), then the state.
   async function sync() {
@@ -228,26 +263,46 @@ const Tag = (() => {
       try {
         await request(packet);
         t.pending = null;
-        if (packet.action === 'login') { t.input = ''; notice('Hi'); buzz(1); }
+        if (packet.action === 'login') { t.input = ''; notice('Hi'); wake(); }
+        else wake();
       } catch (error) {
         if (!error.permanent) throw error;
         t.pending = null; t.selected = '';
         if (error.code === 'MODE_WIFI') { S.mode = 'wifi'; return; }
         if (error.code === 'SIM_OFF') t.off = true; else notice('E' + (ERR[error.code] || 8));
+        wake();
       }
     }
-    try { t.data = await request({action:'poll', as_tag:true}); t.off = false; if (t.data.mode === 'wifi') { S.mode = 'wifi'; return; } }
+    try { t.data = await request({action:'poll', as_tag:true}); t.off = false; t.heard = true; t.heardAt = Date.now(); if (t.data.mode === 'wifi') { S.mode = 'wifi'; return; } }
     catch (error) {
       if (error.code === 'MODE_WIFI') { S.mode = 'wifi'; return; }
       if (error.code === 'SIM_OFF') { t.off = true; return; }
       throw error;
     }
-    const q = t.data.question?.question_id || 0;
-    if (q !== t.question) { if (q && t.data.student_id) buzz(3); t.question = q; t.selected = ''; }   // new question: three buzzes
+    heard(t.data, Date.now());
+  }
+  // What Tag::onDownlink does with each STATE frame: wake on a change, one buzz for a new question, keep the score.
+  function heard(d, now) {
+    const fin = d.state === 'FINISHED', q = d.question?.question_id || 0;
+    if (fin && t.state !== 'FINISHED') t.finishedAt = now;
+    if (t.state === 'FINISHED' && !fin) { t.hasScore = false; t.selected = ''; t.input = ''; wake(now); }
+    if (q !== t.question || d.state !== t.state) {
+      if (q !== t.question) t.selected = '';
+      if (d.state === 'QUESTION_ACTIVE' && q && q !== t.question && d.student_id) buzz(1);   // new question: one buzz
+      wake(now);
+    }
+    t.question = q; t.state = d.state;
+    const sc = d.self_done?.score10;
+    if (fin && sc !== undefined && sc !== null) {
+      const tenths = Math.min(100, Math.floor(Number(sc) * 10 + 1e-6));
+      if (!t.hasScore || t.score !== tenths) { t.score = tenths; t.hasScore = true; t.scoreAt = now; wake(now); }
+    }
   }
   function press(k) {
-    const d = t.data, q = d?.question;
-    if (t.pending || t.off || !d) return;
+    const d = t.data, q = d?.question, wasAwake = t.awake;
+    wake();
+    if (!wasAwake) { draw(); return; }   // a key on a sleeping display only wakes it
+    if (t.pending || t.off || !d) { draw(); return; }
     const login = !d.student_id && d.state === 'LOGIN_OPEN', answer = !!d.student_id && d.state === 'QUESTION_ACTIVE' && q && !q.accepted_answer;
     if (k === 'B') { if (login) t.input = t.input.slice(0, -1); else if (answer) t.selected = ''; }
     else if (k === 'C') {
@@ -268,7 +323,7 @@ const Tag = (() => {
   });
   return {
     sync,
-    start() { if (!timer) { draw(); timer = setInterval(draw, 250); } },
+    start() { if (!timer) { if (!t.startAt) t.startAt = Date.now(); draw(); timer = setInterval(draw, 100); } },
     stop() { clearInterval(timer); timer = null; },
   };
 })();

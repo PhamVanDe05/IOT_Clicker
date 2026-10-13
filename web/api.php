@@ -57,9 +57,11 @@ try {
     if (!in_array($method, ['GET', 'POST'], true)) reject('METHOD', 'Chỉ hỗ trợ GET/POST.', 405);
     $data = [];
     if ($method === 'POST') {
-        if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 1048576) reject('TOO_LARGE', 'Dữ liệu tối đa 1 MB.', 413);
-        $raw = file_get_contents('php://input', false, null, 0, 1048577);
-        if (strlen($raw) > 1048576) reject('TOO_LARGE', 'Dữ liệu tối đa 1 MB.', 413);
+        // A course file for the AI (?action=ai_extract) may be up to 5 MB, sent as base64; everything else 1 MB.
+        $max = ($_GET['action'] ?? '') === 'ai_extract' ? 7340032 : 1048576;
+        if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) reject('TOO_LARGE', 'Dữ liệu tối đa ' . ($max >> 20) . ' MB.', 413);
+        $raw = file_get_contents('php://input', false, null, 0, $max + 1);
+        if (strlen($raw) > $max) reject('TOO_LARGE', 'Dữ liệu tối đa ' . ($max >> 20) . ' MB.', 413);
         $data = json_decode($raw, true);
         if (!is_array($data) || !str_starts_with(ltrim($raw), '{')) reject('JSON', 'JSON không hợp lệ.');
     }
@@ -530,12 +532,29 @@ try {
             header_remove('Content-Type'); header('Content-Type: ' . $img['avatar_type']); header('Cache-Control: private, max-age=300');
             echo $img['avatar']; exit;
         }
-        if ($action === 'ai_status' && $method === 'GET') reply(['ok' => true, 'model' => quiz_ai_name($config)]);
+        if ($action === 'ai_status' && $method === 'GET') reply(['ok' => true, 'model' => quiz_ai_name($config), 'providers' => ai_providers($config)]);
+        if ($action === 'ai_extract' && $method === 'POST') {
+            // PDF / DOCX / PPTX / text file → plain text in the AI box (the teacher can still edit it before generating).
+            rate_limit($db, 'ai_extract', (string)$teacherId, 60, 3600);
+            $bytes = base64_decode((string)(is_string($data['data'] ?? null) ? $data['data'] : ''), true);
+            if ($bytes === false || $bytes === '' || strlen($bytes) > 5242880) reject('AI_FILE', 'File tối đa 5 MB.');
+            $text = document_text(basename((string)(is_string($data['name'] ?? null) ? $data['name'] : '')), $bytes);
+            reply(['ok' => true, 'text' => u_cut($text, 40000), 'cut' => u_len($text) > 40000]);
+        }
+        if ($action === 'ai_review' && $method === 'POST') {
+            // Nhận xét bằng AI (Kết quả): one student or the whole class of a room this teacher owns.
+            $room = owned_session($db, positive_id($data['session_id'] ?? null), $teacherId);
+            $provider = ai_pick($config, $data['provider'] ?? null);
+            rate_limit($db, 'ai_review', (string)$teacherId, 60, 3600);
+            $facts = review_facts($db, $room, is_string($data['student_id'] ?? null) && $data['student_id'] !== '' ? $data['student_id'] : null);
+            $lang = in_array($data['lang'] ?? '', ['en', 'zh'], true) ? $data['lang'] : 'vi';
+            reply(['ok' => true, 'facts' => $facts, 'review' => ai_review($config, $facts, $lang, $provider)]);
+        }
         if ($action === 'ai_generate_questions' && $method === 'POST') {
             // Tạo đề bằng AI: outside the room lock (the model may take half a minute); nothing is saved here —
             // the teacher reviews the questions and saves them with import_questions like an Excel file.
             if (!empty($_SESSION['view_as'])) reject('VIEW_ONLY', 'Đang xem dữ liệu giáo viên khác (chỉ đọc).', 403);
-            if (quiz_ai_name($config) === null) reject('AI_NOT_CONFIGURED', 'Máy chủ chưa cấu hình mô hình AI (chạy sudo bash tools/setup_ai.sh).', 503);
+            $provider = ai_pick($config, $data['provider'] ?? null);
             rate_limit($db, 'ai_quiz', (string)$teacherId, 15, 3600);
             $content = trim((string)(is_string($data['content'] ?? null) ? $data['content'] : ''));
             if (!preg_match('//u', $content) || strlen($content) < 80) reject('AI_CONTENT', 'Dán nội dung môn học (ít nhất vài câu) để AI soạn câu hỏi.');
@@ -546,9 +565,32 @@ try {
             if (!isset(QUIZ_LEVELS[$level])) reject('INVALID_INPUT', 'Độ khó không hợp lệ.');
             $notes = trim((string)(is_string($data['notes'] ?? null) ? $data['notes'] : ''));
             preg_match('/^.{0,500}/su', $notes, $cut);
-            $rows = ai_generate_questions($config, $content, $count, $level, ($data['lang'] ?? 'vi') === 'en' ? 'en' : 'vi', $cut[0]);
-            audit($db, $teacherId, $actorName, 'ai_generate', 'AI tạo ' . count($rows) . ' câu hỏi (' . $level . ')');
-            reply(['ok' => true, 'rows' => $rows, 'model' => quiz_ai_name($config)]);
+            $rows = ai_generate_questions($config, $content, $count, $level, ($data['lang'] ?? 'vi') === 'en' ? 'en' : 'vi', $cut[0], $provider);
+            $model = $provider === 'local' ? ($config['local_ai_model'] ?? 'modelv3') : quiz_ai_name($config);
+            audit($db, $teacherId, $actorName, 'ai_generate', 'AI tạo ' . count($rows) . ' câu hỏi (' . $level . ', ' . $model . ')');
+            reply(['ok' => true, 'rows' => $rows, 'model' => $model, 'asked' => $count]);
+        }
+        if ($action === 'ai_review_students' && $method === 'POST') {
+            // Gợi ý ôn tập cho từng bạn: the page sends the students in small groups and draws each result as it arrives.
+            $room = owned_session($db, positive_id($data['session_id'] ?? null), $teacherId);
+            $provider = ai_pick($config, $data['provider'] ?? null);
+            rate_limit($db, 'ai_review_batch', (string)$teacherId, 300, 3600);
+            $ids = $data['student_ids'] ?? null;
+            if (!is_array($ids) || !array_is_list($ids) || count($ids) < 1 || count($ids) > 12) reject('INVALID_INPUT', 'Mỗi lần 1–12 sinh viên.');
+            foreach ($ids as $id) if (!is_string($id) || $id === '') reject('INVALID_INPUT', 'MSSV không hợp lệ.');
+            [$facts, $codes] = review_facts_many($db, $room, $ids);
+            $lang = in_array($data['lang'] ?? '', ['en', 'zh'], true) ? $data['lang'] : 'vi';
+            set_time_limit(280);
+            // The model may skip a student or slip into the wrong language: ask again, only for those still missing.
+            $got = [];
+            for ($try = 0; $try < 3; $try++) {
+                $todo = array_values(array_filter($facts['students'], fn($st) => !isset($got[$st['id']])));
+                if (!$todo) break;
+                $got += ai_review_students($config, ['students' => $todo] + $facts, $lang, $provider);
+            }
+            $result = [];
+            foreach ($codes as $code => $id) if (isset($got[$code])) $result[$id] = $got[$code];
+            reply(['ok' => true, 'reviews' => $result]);
         }
         if (in_array($action, ['profile_save', 'avatar_upload', 'avatar_remove', 'password_change'], true) && $method === 'POST') {
             if (!profile_ready($db) && $action !== 'password_change') reject('PROFILE_OFF', 'Chưa bật hồ sơ trên máy chủ (chạy sudo bash tools/setup_db.sh).', 409);
@@ -774,7 +816,7 @@ try {
         $result = ['checked' => count($rows), 'errors' => $errors, 'imported' => 0];
         if (($data['commit'] ?? false) === true && !$errors) {
             if (!$examId) { query($db, 'INSERT INTO exam(teacher_id,title) VALUES(?,?)', [$teacherId, $title]); $examId = (int)$db->lastInsertId(); }
-            foreach ($clean as $q) insert_question($db, $examId, $q);
+            foreach ($clean as $i => $q) insert_question($db, $examId, $q + question_meta($rows[$i]));
             $result['imported'] = count($clean); $result['exam_id'] = $examId;
         }
     } elseif ($action === 'save_question') {

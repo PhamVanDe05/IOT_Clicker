@@ -2,6 +2,4 @@
 .local/
 __pycache__/
 
-# STEP exports of the 3D cases (39 MB): kept on disk for SolidWorks, rebuilt from the .scad files
-hardware/case/*/step/
 
